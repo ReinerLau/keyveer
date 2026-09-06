@@ -177,6 +177,33 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(engine.frame(at: 0.65).isEmpty)
   }
 
+  func testExplicitStopStartsDissipationImmediately() {
+    var engine = LightningTrailEngine(seed: 13)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    let active = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+
+    engine.stop(at: 0.11)
+    let stopped = try! XCTUnwrap(engine.frame(at: 0.35).bolts.first)
+
+    XCTAssertEqual(stopped.trunk, active.trunk)
+    XCTAssertTrue(zip(stopped.segments, active.segments).contains { $0.widthScale < $1.widthScale })
+  }
+
+  func testMovesAfterExplicitStopAreIgnoredUntilMovementResumes() {
+    var engine = LightningTrailEngine(seed: 14)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    engine.stop(at: 0.11)
+
+    engine.move(to: CGPoint(x: 200, y: 0), at: 0.2)
+    XCTAssertEqual(engine.frame(at: 0.2).bolts.first?.trunk.points.last, CGPoint(x: 80, y: 0))
+
+    engine.resumeMovement()
+    engine.move(to: CGPoint(x: 220, y: 0), at: 0.3)
+    XCTAssertEqual(engine.frame(at: 0.3).bolts.count, 2)
+  }
+
   func testContinuousMovementKeepsOnlyTheLatestBoltAtAnyRefreshRate() {
     let atSixty = activeBoltSnapshot(refreshRate: 60)
     let atOneTwenty = activeBoltSnapshot(refreshRate: 120)

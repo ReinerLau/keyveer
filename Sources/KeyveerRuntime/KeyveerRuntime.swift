@@ -536,6 +536,10 @@ public enum RuntimeEffect: Equatable, Sendable {
   case capabilitiesChanged(PermissionState)
   case freeModeStatusChanged(FreeModeStatus)
   case modeChanged(isEnabled: Bool)
+  /// A keyboard movement key was pressed; the visual trail may grow again.
+  case movementBegan
+  /// The final keyboard movement key was released; the visual trail should stop growing now.
+  case movementEnded
   case pointerPositionChanged(to: Point)
   case pointerMoved(to: Point, buttons: Set<MouseButton>)
   case mouseButton(MouseButton, ButtonPhase)
@@ -1662,7 +1666,8 @@ public final class KeyveerRuntime {
       let disposition: EventDisposition = .consume
       keyboardDispositions[key] = disposition
       if isMappedKey(key) { pressedKeys.insert(key) }
-      return RuntimeResponse(disposition: disposition)
+      let effects = isMovementKey(key) ? [RuntimeEffect.movementBegan] : []
+      return RuntimeResponse(disposition: disposition, effects: effects)
     }
     if heldButtons.insert(button).inserted {
       keyboardDispositions[key] = .consume
@@ -1711,6 +1716,9 @@ public final class KeyveerRuntime {
       return RuntimeResponse(disposition: .consume, effects: [.mouseButton(button, .up)])
     }
     pressedKeys.remove(key)
+    if modeEnabled && isMovementKey(key) && !pressedKeys.contains(where: isMovementKey) {
+      return RuntimeResponse(disposition: .consume, effects: [.movementEnded])
+    }
     return RuntimeResponse(disposition: .consume)
   }
 
@@ -1809,6 +1817,13 @@ public final class KeyveerRuntime {
       configuration.bindings.speedThree,
     ]
     return values.map(configurationKey(named:)).contains(key)
+  }
+
+  private func isMovementKey(_ key: Key) -> Bool {
+    [
+      configuration.bindings.moveUp, configuration.bindings.moveDown,
+      configuration.bindings.moveLeft, configuration.bindings.moveRight,
+    ].map(configurationKey(named:)).contains(key)
   }
 
   private func movementVector() -> Point {

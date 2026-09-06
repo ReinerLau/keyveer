@@ -102,6 +102,7 @@ struct LightningTrailEngine {
   private var lastKnownPoint: CGPoint?
   private var nextBoltID: UInt64 = 0
   private(set) var reduceMotion = false
+  private var movementSuppressed = false
 
   init(seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max)) {
     random = SplitMix64(seed: seed)
@@ -118,10 +119,19 @@ struct LightningTrailEngine {
     bolts.removeAll(keepingCapacity: true)
     lastMovementTime = nil
     lastKnownPoint = nil
+    movementSuppressed = false
+  }
+
+  mutating func resumeMovement() {
+    movementSuppressed = false
   }
 
   mutating func move(to point: CGPoint, at timestamp: TimeInterval) {
     prune(at: timestamp)
+    guard !movementSuppressed else {
+      lastKnownPoint = point
+      return
+    }
     guard lastKnownPoint != point else { return }
     if samples.isEmpty, let lastKnownPoint {
       samples.append(Sample(point: lastKnownPoint))
@@ -130,6 +140,17 @@ struct LightningTrailEngine {
     lastKnownPoint = point
     lastMovementTime = timestamp
     emitIfReady(at: timestamp)
+  }
+
+  /// Ends the current continuous movement immediately.
+  ///
+  /// Physical pointer input still uses the stationary-time fallback in `frame(at:)`, while
+  /// keyboard movement can call this when its final movement key is released.
+  mutating func stop(at timestamp: TimeInterval) {
+    prune(at: timestamp)
+    movementSuppressed = true
+    guard let activeIndex = bolts.firstIndex(where: { $0.stoppedAt == nil }) else { return }
+    stopActiveBolt(at: timestamp, index: activeIndex)
   }
 
   mutating func frame(at timestamp: TimeInterval) -> LightningTrailFrame {
@@ -294,6 +315,10 @@ struct LightningTrailEngine {
       }
       return
     }
+    stopActiveBolt(at: lastMovementTime + Self.stopDelay, index: activeIndex)
+  }
+
+  private mutating func stopActiveBolt(at timestamp: TimeInterval, index activeIndex: Int) {
     let active = bolts[activeIndex]
     let stopped = LightningBolt(
       id: active.id,
@@ -301,7 +326,7 @@ struct LightningTrailEngine {
       trunk: active.trunk,
       segments: active.segments,
       createdAt: active.createdAt,
-      stoppedAt: lastMovementTime + Self.stopDelay,
+      stoppedAt: timestamp,
       glowScale: active.glowScale)
     bolts = [stopped]
     if let last = samples.last { samples = [last] }

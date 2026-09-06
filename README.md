@@ -70,6 +70,8 @@ numeric limits are validated during reload.
 
 A continuous movement grows one complete lightning trunk from its exact starting point to the
 marker. The trunk has no artificial length limit and stays fully visible until movement stops.
+For keyboard movement, releasing the final movement key triggers dissipation immediately; physical
+pointer-only movement retains the brief stationary timeout fallback.
 It then remains fixed and opaque while independently timed sections shrink and break apart in
 place for 0.45 seconds. The effect has no directional wipe, branches, or flying sparks.
 

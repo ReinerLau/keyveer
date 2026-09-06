@@ -610,6 +610,24 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(100 - point.y, 39.3, accuracy: 0.4)
   }
 
+  func testReleasingTheFinalMovementKeySignalsTheTrailToStop() {
+    let runtime = KeyveerRuntime(permissions: .allGranted, pointer: Point(x: 0, y: 0))
+    enterFreeMode(runtime)
+
+    _ = runtime.handle(.keyDown(.l, at: 1))
+    XCTAssertEqual(runtime.handle(.keyUp(.l, at: 1.1)).effects, [.movementEnded])
+  }
+
+  func testReleasingOneOfTwoMovementKeysDoesNotStopTheTrail() {
+    let runtime = KeyveerRuntime(permissions: .allGranted, pointer: Point(x: 0, y: 0))
+    enterFreeMode(runtime)
+
+    _ = runtime.handle(.keyDown(.l, at: 1))
+    _ = runtime.handle(.keyDown(.i, at: 1))
+    XCTAssertFalse(runtime.handle(.keyUp(.l, at: 1.1)).effects.contains(.movementEnded))
+    XCTAssertTrue(runtime.handle(.keyUp(.i, at: 1.2)).effects.contains(.movementEnded))
+  }
+
   func testQuartzVerticalBindingsMapIToUpAndKToDown() throws {
     let up = KeyveerRuntime(permissions: .allGranted, pointer: Point(x: 100, y: 100))
     enterFreeMode(up)
@@ -818,7 +836,7 @@ final class KeyveerRuntimeTests: XCTestCase {
 
     XCTAssertEqual(buttons, [.left])
     XCTAssertGreaterThan(point.x, 100)
-    XCTAssertEqual(runtime.handle(.keyUp(.l, at: 1.3)).effects, [])
+    XCTAssertEqual(runtime.handle(.keyUp(.l, at: 1.3)).effects, [.movementEnded])
     XCTAssertEqual(runtime.handle(.keyUp(.space, at: 1.4)).effects, [.mouseButton(.left, .up)])
   }
 

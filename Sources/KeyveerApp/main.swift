@@ -710,6 +710,27 @@ private final class CursorMarkerController {
     render(at: now)
   }
 
+  func stopTrail() {
+    guard isShown else { return }
+    let now = CACurrentMediaTime()
+    lightning.stop(at: now)
+    render(at: now)
+  }
+
+  func resumeTrail() {
+    lightning.resumeMovement()
+  }
+
+  func movePhysical(to point: Point) {
+    let now = CACurrentMediaTime()
+    lastPoint = point
+    if isShown {
+      lightning.resumeMovement()
+      lightning.move(to: markerCenter(for: point), at: now)
+    }
+    render(at: now)
+  }
+
   func tick() {
     render(at: CACurrentMediaTime())
   }
@@ -1202,7 +1223,8 @@ private final class KeyveerApplicationController: NSObject {
     diagnostics.record(response)
     let uiEffects = response.effects.filter { effect in
       switch effect {
-      case .capabilitiesChanged, .freeModeStatusChanged, .modeChanged, .pointerMoved,
+      case .capabilitiesChanged, .freeModeStatusChanged, .modeChanged, .movementBegan,
+        .movementEnded, .pointerMoved,
         .configurationAccepted, .pointerPositionChanged, .configurationRejected,
         .eventTapShouldBeReenabled, .diagnostic:
         return true
@@ -1241,8 +1263,12 @@ private final class KeyveerApplicationController: NSObject {
         } else {
           cursorMarker.hide()
         }
-      case .pointerPositionChanged(to: let point): cursorMarker.move(to: point)
+      case .movementEnded:
+        cursorMarker.stopTrail()
+      case .movementBegan:
+        cursorMarker.resumeTrail()
       case .pointerMoved(to: let point, buttons: _): cursorMarker.move(to: point)
+      case .pointerPositionChanged(to: let point): cursorMarker.movePhysical(to: point)
       case .configurationAccepted:
         configurationValid = true
         configurationError = nil
