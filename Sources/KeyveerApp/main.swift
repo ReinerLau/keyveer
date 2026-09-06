@@ -451,6 +451,7 @@ final class LightningTrailView: NSView {
 
     private struct CachedBoltPaths {
       let trunk: [CachedTrunkSegment]
+      let arc: [CachedTrunkSegment]?
     }
 
     struct DrawingState {
@@ -491,6 +492,12 @@ final class LightningTrailView: NSView {
           paths.trunk, renderedSegments: bolt.segments,
           alpha: bolt.alpha, glowScale: bolt.glowScale,
           visualSettings: drawingState.visualSettings)
+        if let arc = bolt.arc, let arcPaths = paths.arc {
+          draw(
+            arcPaths, renderedSegments: arc.segments,
+            alpha: bolt.alpha * arc.opacity, glowScale: bolt.glowScale,
+            visualSettings: drawingState.visualSettings)
+        }
       }
     }
 
@@ -607,10 +614,42 @@ final class LightningTrailView: NSView {
             cachedSegments.append(
               CachedTrunkSegment(path: path, start: segment.start, end: segment.end))
         }
-        pathCache[bolt.id] = CachedBoltPaths(trunk: cachedSegments)
+        let cachedArc: [CachedTrunkSegment]?
+        if let arc = bolt.arc {
+          cachedArc = updateCachedSegments(pathCache[bolt.id]?.arc ?? [], with: arc.segments)
+        } else {
+          cachedArc = nil
+        }
+        pathCache[bolt.id] = CachedBoltPaths(trunk: cachedSegments, arc: cachedArc)
       }
     }
+
+    private func updateCachedSegments(
+      _ existing: [CachedTrunkSegment], with segments: [RenderedLightningSegment]
+    ) -> [CachedTrunkSegment] {
+      var cached = existing
+      let comparableCount = min(cached.count, segments.count)
+      var sharedCount = 0
+      while
+        sharedCount < comparableCount,
+        cached[sharedCount].start == segments[sharedCount].start,
+        cached[sharedCount].end == segments[sharedCount].end
+      {
+        sharedCount += 1
+      }
+      if sharedCount < cached.count { cached.removeSubrange(sharedCount...) }
+      for segment in segments.dropFirst(cached.count) {
+        let path = NSBezierPath()
+        path.move(to: segment.start)
+        path.line(to: segment.end)
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        cached.append(CachedTrunkSegment(path: path, start: segment.start, end: segment.end))
+      }
+      return cached
+    }
 }
+
 
 private final class CursorMarkerController {
   private let panelFactory: (NSRect) -> NSPanel?

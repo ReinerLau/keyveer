@@ -14,6 +14,9 @@ final class LightningTrailEngineTests: XCTestCase {
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
     XCTAssertEqual(bolt.trunk.points.first, CGPoint(x: 0, y: 0))
     XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 8, y: 0))
+    let arc = try! XCTUnwrap(bolt.arc)
+    XCTAssertEqual(arc.stroke.points.first, bolt.trunk.points.first)
+    XCTAssertEqual(arc.stroke.points.last, bolt.trunk.points.last)
   }
 
   func testMovementBelowEightPointsDoesNotStartABolt() {
@@ -242,6 +245,97 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(points.count, 8)
   }
 
+  func testCompanionArcsAreThinAndAnchoredToTheTrunk() {
+    var found = false
+    for seed in 0..<200 {
+      var engine = LightningTrailEngine(seed: UInt64(seed))
+      engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+      engine.move(to: CGPoint(x: 400, y: 0), at: 0.1)
+      guard let bolt = engine.frame(at: 0.1).bolts.first, let arc = bolt.arc else { continue }
+
+      found = true
+      XCTAssertEqual(arc.stroke.points.first, bolt.trunk.points.first)
+      XCTAssertEqual(arc.stroke.points.last, bolt.trunk.points.last)
+      XCTAssertEqual(arc.stroke.points.count, bolt.trunk.points.count)
+      XCTAssertGreaterThanOrEqual(arc.widthScale, 0.25)
+      XCTAssertLessThanOrEqual(arc.widthScale, 0.45)
+      XCTAssertGreaterThanOrEqual(arc.opacity, 0.35)
+      XCTAssertLessThanOrEqual(arc.opacity, 0.60)
+      XCTAssertTrue(
+        arc.stroke.points.dropFirst().dropLast().contains {
+          distanceToPolyline($0, bolt.trunk.points) > 0.5
+        })
+      break
+    }
+    XCTAssertTrue(found)
+  }
+
+  func testCompanionArcsAreDeterministicAndFrozenAsTheBoltGrows() {
+    var first = LightningTrailEngine(seed: 42)
+    var second = LightningTrailEngine(seed: 42)
+    for engineIndex in 0..<2 {
+      if engineIndex == 0 {
+        first.move(to: CGPoint(x: 0, y: 0), at: 0)
+        first.move(to: CGPoint(x: 240, y: 0), at: 0.1)
+      } else {
+        second.move(to: CGPoint(x: 0, y: 0), at: 0)
+        second.move(to: CGPoint(x: 240, y: 0), at: 0.1)
+      }
+    }
+    let initial = try! XCTUnwrap(first.frame(at: 0.1).bolts.first)
+    let sameSeed = try! XCTUnwrap(second.frame(at: 0.1).bolts.first)
+    XCTAssertEqual(initial.arc, sameSeed.arc)
+
+    first.move(to: CGPoint(x: 420, y: 30), at: 0.2)
+    let extended = try! XCTUnwrap(first.frame(at: 0.2).bolts.first)
+    let initialArc = try! XCTUnwrap(initial.arc)
+    let extendedArc = try! XCTUnwrap(extended.arc)
+    // The old head becomes an interior point when the route grows; every earlier
+    // arc bend remains frozen and the new head is appended independently.
+    XCTAssertEqual(
+      Array(extendedArc.stroke.points.prefix(initialArc.stroke.points.count - 1)),
+      Array(initialArc.stroke.points.dropLast()))
+  }
+
+  func testReducedMotionDoesNotGenerateCompanionArcs() {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.setReduceMotion(true)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 240, y: 0), at: 0.1)
+
+    let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    XCTAssertNil(bolt.arc)
+  }
+
+  func testCompanionArcsDissipateInPlaceWithTheTrunk() {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 240, y: 0), at: 0.1)
+    let initial = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    guard let initialArc = initial.arc else {
+      XCTFail("expected a companion arc")
+      return
+    }
+
+    let stopped = try! XCTUnwrap(engine.frame(at: 0.35).bolts.first)
+    let stoppedArc = try! XCTUnwrap(stopped.arc)
+    XCTAssertEqual(stoppedArc.stroke, initialArc.stroke)
+    XCTAssertTrue(zip(stoppedArc.segments, initialArc.segments).contains { $0.widthScale < $1.widthScale })
+    XCTAssertTrue(engine.frame(at: 0.65).isEmpty)
+  }
+
+  func testEachBoltUsesOneContinuousLongCompanionArc() {
+    var engine = LightningTrailEngine(seed: 99)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 1_600, y: 0), at: 0.1)
+
+    let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    let arc = try! XCTUnwrap(bolt.arc)
+    let length = zip(arc.stroke.points, arc.stroke.points.dropFirst())
+      .map { euclideanDistance($0, $1) }.reduce(0, +)
+    XCTAssertGreaterThan(length, 1_600 * 0.50)
+  }
+
   func testCurvedMovementHistoryBendsTheBoltAroundTheTurn() {
     var engine = LightningTrailEngine(seed: 42)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
@@ -436,5 +530,25 @@ final class LightningTrailEngineTests: XCTestCase {
 
   private func euclideanDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
     hypot(lhs.x - rhs.x, lhs.y - rhs.y)
+  }
+
+  private func distanceToPolyline(_ point: CGPoint, _ points: [CGPoint]) -> CGFloat {
+    zip(points, points.dropFirst()).map { start, end in
+      let vector = subtract(end, start)
+      let lengthSquared = vector.x * vector.x + vector.y * vector.y
+      guard lengthSquared > 0 else { return euclideanDistance(point, start) }
+      let projection = max(
+        0, min(1, ((point.x - start.x) * vector.x + (point.y - start.y) * vector.y) / lengthSquared))
+      let closest = CGPoint(x: start.x + vector.x * projection, y: start.y + vector.y * projection)
+      return euclideanDistance(point, closest)
+    }.min() ?? .greatestFiniteMagnitude
+  }
+
+  private func polylineLength(_ points: [CGPoint]) -> CGFloat {
+    zip(points, points.dropFirst()).map { euclideanDistance($0, $1) }.reduce(0, +)
+  }
+
+  private func subtract(_ lhs: CGPoint, _ rhs: CGPoint) -> CGPoint {
+    CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
   }
 }

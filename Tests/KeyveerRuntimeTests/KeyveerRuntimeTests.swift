@@ -1312,8 +1312,8 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertNil(trail["headWidthScale"])
     XCTAssertEqual(trail["bendOffsetDistanceMin"] as? Double, 6)
     XCTAssertEqual(trail["bendOffsetDistanceMax"] as? Double, 24)
-    XCTAssertEqual(trail["bendOffsetDirectionMin"] as? Double, 0)
-    XCTAssertEqual(trail["bendOffsetDirectionMax"] as? Double, 360)
+    XCTAssertEqual(trail["bendOffsetDirectionMin"] as? Double, -90)
+    XCTAssertEqual(trail["bendOffsetDirectionMax"] as? Double, 90)
     XCTAssertEqual(trail["bendSpacingMin"] as? Double, 24)
     XCTAssertEqual(trail["bendSpacingMax"] as? Double, 36)
   }
@@ -1356,7 +1356,7 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDistanceMin, 6)
     XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDistanceMax, 40)
     XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMin, 90)
-    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMax, 360)
+    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMax, 90)
     XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMin, 24)
     XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMax, 36)
 

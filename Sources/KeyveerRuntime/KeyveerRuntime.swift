@@ -929,8 +929,8 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     bendSpacingMax: Double = 36,
     bendOffsetDistanceMin: Double = 6,
     bendOffsetDistanceMax: Double = 24,
-    bendOffsetDirectionMin: Double = 0,
-    bendOffsetDirectionMax: Double = 360,
+    bendOffsetDirectionMin: Double = -90,
+    bendOffsetDirectionMax: Double = 90,
     blurRadius: Double = 16,
     coreColor: String = "#FFFFFF",
     outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
@@ -972,9 +972,9 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       bendOffsetDistanceMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMax)
         ?? 24,
       bendOffsetDirectionMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMin)
-        ?? 0,
+        ?? -90,
       bendOffsetDirectionMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMax)
-        ?? 360,
+        ?? 90,
       blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)

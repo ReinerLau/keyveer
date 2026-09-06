@@ -59,8 +59,8 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
     "bendSpacingMax": 36,
     "bendOffsetDistanceMin": 6,
     "bendOffsetDistanceMax": 24,
-    "bendOffsetDirectionMin": 0,
-    "bendOffsetDirectionMax": 360,
+    "bendOffsetDirectionMin": -90,
+    "bendOffsetDirectionMax": 90,
     "blurRadius": 16,
     "coreColor": "#FFFFFF",
     "outerGlowColor": "#008FEF",
@@ -83,7 +83,8 @@ marker. The trunk has no artificial length limit and stays fully visible until m
 For keyboard movement, releasing the final movement key triggers dissipation immediately; physical
 pointer-only movement retains the brief stationary timeout fallback.
 It then remains fixed and opaque while independently timed sections shrink and break apart in
-place for 0.45 seconds. The effect has no directional wipe, branches, or flying sparks.
+place for 0.45 seconds. The effect has no directional wipe, full-width branches, or flying sparks;
+it includes one continuous thin companion arc, generated as an independent route alongside the trunk.
 
 For lock-screen, sleep, permission-loss, and event-tap recovery checks, run
 `./Scripts/recovery-smoke-test.sh`. These cases require system interaction and are recorded as an

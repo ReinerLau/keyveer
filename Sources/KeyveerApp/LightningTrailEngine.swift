@@ -19,6 +19,14 @@ struct LightningSegmentProfile: Equatable {
   let dissipationDuration: TimeInterval
 }
 
+struct LightningArc: Equatable {
+  let id: UInt64
+  let stroke: LightningStroke
+  let segments: [LightningSegmentProfile]
+  let widthScale: CGFloat
+  let opacity: CGFloat
+}
+
 struct LightningBendConfiguration: Equatable {
   let spacingMin: CGFloat
   let spacingMax: CGFloat
@@ -32,8 +40,8 @@ struct LightningBendConfiguration: Equatable {
     spacingMax: 36,
     offsetDistanceMin: 6,
     offsetDistanceMax: 24,
-    offsetDirectionMinRadians: 0,
-    offsetDirectionMaxRadians: 2 * .pi)
+    offsetDirectionMinRadians: -.pi / 2,
+    offsetDirectionMaxRadians: .pi / 2)
 }
 
 struct LightningBolt: Equatable {
@@ -41,6 +49,7 @@ struct LightningBolt: Equatable {
   let seed: UInt64
   let trunk: LightningStroke
   let segments: [LightningSegmentProfile]
+  let arc: LightningArc?
   let createdAt: TimeInterval
   let stoppedAt: TimeInterval?
   let glowScale: CGFloat
@@ -51,6 +60,7 @@ struct RenderedLightningBolt: Equatable {
   let id: UInt64
   let trunk: LightningStroke
   let segments: [RenderedLightningSegment]
+  let arc: RenderedLightningArc?
   let alpha: CGFloat
   let glowScale: CGFloat
 
@@ -58,6 +68,7 @@ struct RenderedLightningBolt: Equatable {
     id: UInt64,
     trunk: LightningStroke,
     segments: [RenderedLightningSegment]? = nil,
+    arc: RenderedLightningArc? = nil,
     alpha: CGFloat,
     glowScale: CGFloat
   ) {
@@ -66,8 +77,31 @@ struct RenderedLightningBolt: Equatable {
     self.segments = segments ?? zip(trunk.points, trunk.points.dropFirst()).map { start, end in
       RenderedLightningSegment(start: start, end: end, widthScale: 1)
     }
+    self.arc = arc
     self.alpha = alpha
     self.glowScale = glowScale
+  }
+}
+
+struct RenderedLightningArc: Equatable {
+  let id: UInt64
+  let stroke: LightningStroke
+  let segments: [RenderedLightningSegment]
+  let widthScale: CGFloat
+  let opacity: CGFloat
+
+  init(
+    id: UInt64 = 0,
+    stroke: LightningStroke,
+    segments: [RenderedLightningSegment],
+    widthScale: CGFloat,
+    opacity: CGFloat
+  ) {
+    self.id = id
+    self.stroke = stroke
+    self.segments = segments
+    self.widthScale = widthScale
+    self.opacity = opacity
   }
 }
 
@@ -105,6 +139,7 @@ struct LightningTrailEngine {
     mutating func value(in range: ClosedRange<CGFloat>) -> CGFloat {
       range.lowerBound + unit() * (range.upperBound - range.lowerBound)
     }
+
   }
 
   private static let standardLifetime: TimeInterval = 0.45
@@ -196,6 +231,7 @@ struct LightningTrailEngine {
         id: bolt.id,
         trunk: bolt.trunk,
         segments: renderedSegments(for: bolt, at: timestamp),
+        arc: renderedArc(for: bolt, at: timestamp),
         alpha: 1,
         glowScale: bolt.glowScale)
     }
@@ -227,7 +263,8 @@ struct LightningTrailEngine {
     }
     let generated = makeBolt(
       along: centerline, id: boltID, seed: boltSeed, createdAt: createdAt,
-      bendConfiguration: configuration)
+      bendConfiguration: configuration,
+      existingArc: activeIndex.flatMap { bolts[$0].arc })
     if let activeIndex {
       bolts[activeIndex] = generated
     } else {
@@ -237,7 +274,8 @@ struct LightningTrailEngine {
 
   private func makeBolt(
     along centerline: [CGPoint], id: UInt64, seed: UInt64, createdAt: TimeInterval,
-    bendConfiguration: LightningBendConfiguration
+    bendConfiguration: LightningBendConfiguration,
+    existingArc: LightningArc?
   ) -> LightningBolt {
     var spacingRandom = SplitMix64(seed: seed ^ 0xD1B5_4A32_D192_ED03)
     let sampledCenterline: [CGPoint]
@@ -257,6 +295,7 @@ struct LightningTrailEngine {
         id: id, seed: seed, trunk: LightningStroke(points: sampledCenterline),
         segments: makeSegmentProfiles(
           points: sampledCenterline, randomWidths: false, random: &profileRandom),
+        arc: nil,
         createdAt: createdAt, stoppedAt: nil, glowScale: 1,
         bendConfiguration: bendConfiguration)
     }
@@ -275,14 +314,95 @@ struct LightningTrailEngine {
     }
     primaryBendPoints.append(head)
     let trunk = LightningStroke(points: primaryBendPoints)
+    let arc = makeCompanionArcIfReady(
+      centerline: sampledCenterline, trunk: trunk, seed: seed,
+      bendConfiguration: bendConfiguration, existingArc: existingArc)
 
     return LightningBolt(
       id: id, seed: seed, trunk: trunk,
       segments: makeSegmentProfiles(
         points: primaryBendPoints, randomWidths: true, random: &profileRandom),
+      arc: arc,
       createdAt: createdAt,
       stoppedAt: nil, glowScale: 1,
       bendConfiguration: bendConfiguration)
+  }
+
+  private func makeCompanionArcIfReady(
+    centerline: [CGPoint], trunk: LightningStroke, seed: UInt64,
+    bendConfiguration: LightningBendConfiguration,
+    existingArc: LightningArc?
+  ) -> LightningArc? {
+    guard !reduceMotion, centerline.count >= 2, trunk.points.count >= 2 else { return nil }
+    guard polylineLength(centerline) >= Self.minimumSpan else { return nil }
+
+    let widthScale: CGFloat
+    let opacity: CGFloat
+    if let existing = existingArc {
+      // Preserve the arc's independently chosen appearance while its geometry grows.
+      widthScale = existing.widthScale
+      opacity = existing.opacity
+    } else {
+      var styleRandom = SplitMix64(seed: seed ^ 0x6A09_E667_F3BC_C909)
+      widthScale = styleRandom.value(in: 0.25...0.45)
+      opacity = 0.35 + CGFloat(styleRandom.unit()) * 0.25
+    }
+    return makeCompanionArc(
+      centerline: centerline, trunk: trunk, seed: seed,
+      widthScale: widthScale, opacity: opacity,
+      bendConfiguration: bendConfiguration)
+  }
+
+  private func makeCompanionArc(
+    centerline: [CGPoint], trunk: LightningStroke, seed: UInt64,
+    widthScale: CGFloat, opacity: CGFloat, bendConfiguration: LightningBendConfiguration
+  ) -> LightningArc {
+    var points = [trunk.points[0]]
+    var random = SplitMix64(
+      seed: seed ^ 0xD1B5_4A32_D192_ED03)
+    if centerline.count > 2 {
+      for index in 1..<(centerline.count - 1) {
+        let center = centerline[index]
+        let forward = subtract(centerline[index], centerline[index - 1])
+        let offset = randomOffset(
+          using: bendConfiguration, random: &random,
+          forwardAngle: atan2(forward.y, forward.x))
+        points.append(add(center, offset))
+      }
+    }
+    points.append(trunk.points[trunk.points.count - 1])
+    var profileRandom = SplitMix64(seed: seed ^ 0xA24B_AED4_963E_E407)
+    return LightningArc(
+      id: seed ^ 0x94D0_49BB_1331_11EB,
+      stroke: LightningStroke(points: points),
+      segments: makeArcSegmentProfiles(
+        points: points, widthScale: widthScale, random: &profileRandom),
+      widthScale: widthScale,
+      opacity: opacity)
+  }
+
+  private func makeArcSegmentProfiles(
+    points: [CGPoint], widthScale: CGFloat, random: inout SplitMix64
+  ) -> [LightningSegmentProfile] {
+    guard points.count >= 2 else { return [] }
+    var profiles: [LightningSegmentProfile] = []
+    for (start, end) in zip(points, points.dropFirst()) {
+      let length = distance(start, end)
+      guard length > 0 else { continue }
+      let count = max(1, Int(ceil(length / 4)))
+      for subdivision in 0..<count {
+        let startProgress = CGFloat(subdivision) / CGFloat(count)
+        let endProgress = CGFloat(subdivision + 1) / CGFloat(count)
+        profiles.append(
+          LightningSegmentProfile(
+            start: add(start, multiply(subtract(end, start), startProgress)),
+            end: add(start, multiply(subtract(end, start), endProgress)),
+            baseWidthScale: widthScale,
+            dissipationDelay: TimeInterval(random.value(in: 0...0.10)),
+            dissipationDuration: TimeInterval(random.value(in: 0.20...0.35))))
+      }
+    }
+    return profiles
   }
 
   private func makeSegmentProfiles(
@@ -354,6 +474,7 @@ struct LightningTrailEngine {
       seed: active.seed,
       trunk: active.trunk,
       segments: active.segments,
+      arc: active.arc,
       createdAt: active.createdAt,
       stoppedAt: timestamp,
       glowScale: active.glowScale,
@@ -372,6 +493,24 @@ struct LightningTrailEngine {
         widthScale: segment.baseWidthScale * segmentDissipationScale(
           for: segment, bolt: bolt, at: timestamp))
     }
+  }
+
+  private func renderedArc(
+    for bolt: LightningBolt, at timestamp: TimeInterval
+  ) -> RenderedLightningArc? {
+    guard let arc = bolt.arc else { return nil }
+    return RenderedLightningArc(
+      id: arc.id,
+      stroke: arc.stroke,
+      segments: arc.segments.map { segment in
+        RenderedLightningSegment(
+          start: segment.start,
+          end: segment.end,
+          widthScale: segment.baseWidthScale * segmentDissipationScale(
+            for: segment, bolt: bolt, at: timestamp))
+      },
+      widthScale: arc.widthScale,
+      opacity: arc.opacity)
   }
 
   private func segmentDissipationScale(
