@@ -19,6 +19,23 @@ struct LightningSegmentProfile: Equatable {
   let dissipationDuration: TimeInterval
 }
 
+struct LightningBendConfiguration: Equatable {
+  let spacingMin: CGFloat
+  let spacingMax: CGFloat
+  let offsetDistanceMin: CGFloat
+  let offsetDistanceMax: CGFloat
+  let offsetDirectionMinRadians: CGFloat
+  let offsetDirectionMaxRadians: CGFloat
+
+  static let `default` = LightningBendConfiguration(
+    spacingMin: 24,
+    spacingMax: 36,
+    offsetDistanceMin: 6,
+    offsetDistanceMax: 24,
+    offsetDirectionMinRadians: 0,
+    offsetDirectionMaxRadians: 2 * .pi)
+}
+
 struct LightningBolt: Equatable {
   let id: UInt64
   let seed: UInt64
@@ -27,6 +44,7 @@ struct LightningBolt: Equatable {
   let createdAt: TimeInterval
   let stoppedAt: TimeInterval?
   let glowScale: CGFloat
+  let bendConfiguration: LightningBendConfiguration
 }
 
 struct RenderedLightningBolt: Equatable {
@@ -93,11 +111,12 @@ struct LightningTrailEngine {
   private static let reducedMotionLifetime: TimeInterval = 0.15
   private static let stopDelay: TimeInterval = 0.10
   private static let minimumSpan: CGFloat = 8
-  private static let growthSpacing: CGFloat = 18
+  private static let reducedMotionSpacing: CGFloat = 18
 
   private var samples: [Sample] = []
   private var bolts: [LightningBolt] = []
   private var random: SplitMix64
+  private var bendConfiguration = LightningBendConfiguration.default
   private var lastMovementTime: TimeInterval?
   private var lastKnownPoint: CGPoint?
   private var nextBoltID: UInt64 = 0
@@ -124,6 +143,23 @@ struct LightningTrailEngine {
 
   mutating func resumeMovement() {
     movementSuppressed = false
+  }
+
+  mutating func updateBendOffsetConfiguration(
+    spacingMin: CGFloat,
+    spacingMax: CGFloat,
+    distanceMin: CGFloat,
+    distanceMax: CGFloat,
+    directionMinDegrees: CGFloat,
+    directionMaxDegrees: CGFloat
+  ) {
+    bendConfiguration = LightningBendConfiguration(
+      spacingMin: spacingMin,
+      spacingMax: spacingMax,
+      offsetDistanceMin: distanceMin,
+      offsetDistanceMax: distanceMax,
+      offsetDirectionMinRadians: directionMinDegrees * .pi / 180,
+      offsetDirectionMaxRadians: directionMaxDegrees * .pi / 180)
   }
 
   mutating func move(to point: CGPoint, at timestamp: TimeInterval) {
@@ -176,18 +212,22 @@ struct LightningTrailEngine {
     let boltID: UInt64
     let boltSeed: UInt64
     let createdAt: TimeInterval
+    let configuration: LightningBendConfiguration
     if let activeIndex {
       boltID = bolts[activeIndex].id
       boltSeed = bolts[activeIndex].seed
       createdAt = bolts[activeIndex].createdAt
+      configuration = bolts[activeIndex].bendConfiguration
     } else {
       boltID = nextBoltID
       nextBoltID &+= 1
       boltSeed = random.next()
       createdAt = timestamp
+      configuration = bendConfiguration
     }
     let generated = makeBolt(
-      along: centerline, id: boltID, seed: boltSeed, createdAt: createdAt)
+      along: centerline, id: boltID, seed: boltSeed, createdAt: createdAt,
+      bendConfiguration: configuration)
     if let activeIndex {
       bolts[activeIndex] = generated
     } else {
@@ -196,9 +236,19 @@ struct LightningTrailEngine {
   }
 
   private func makeBolt(
-    along centerline: [CGPoint], id: UInt64, seed: UInt64, createdAt: TimeInterval
+    along centerline: [CGPoint], id: UInt64, seed: UInt64, createdAt: TimeInterval,
+    bendConfiguration: LightningBendConfiguration
   ) -> LightningBolt {
-    let sampledCenterline = resampledPath(centerline, spacing: Self.growthSpacing)
+    var spacingRandom = SplitMix64(seed: seed ^ 0xD1B5_4A32_D192_ED03)
+    let sampledCenterline: [CGPoint]
+    if reduceMotion {
+      sampledCenterline = resampledPath(centerline, spacing: Self.reducedMotionSpacing)
+    } else {
+      sampledCenterline = randomResampledPath(
+        centerline,
+        spacingRange: bendConfiguration.spacingMin...bendConfiguration.spacingMax,
+        random: &spacingRandom)
+    }
     let anchor = sampledCenterline.first!
     let head = sampledCenterline.last!
     var profileRandom = SplitMix64(seed: seed ^ 0xA24B_AED4_963E_E407)
@@ -207,28 +257,32 @@ struct LightningTrailEngine {
         id: id, seed: seed, trunk: LightningStroke(points: sampledCenterline),
         segments: makeSegmentProfiles(
           points: sampledCenterline, randomWidths: false, random: &profileRandom),
-        createdAt: createdAt, stoppedAt: nil, glowScale: 1)
+        createdAt: createdAt, stoppedAt: nil, glowScale: 1,
+        bendConfiguration: bendConfiguration)
     }
 
     var primaryRandom = SplitMix64(seed: seed ^ 0x9E37_79B9_7F4A_7C15)
-    var detailRandom = SplitMix64(seed: seed ^ 0xD1B5_4A32_D192_ED03)
     var primaryBendPoints = [anchor]
     for index in 1..<(sampledCenterline.count - 1) {
       let center = sampledCenterline[index]
-      let offset = randomOffset(in: 6...24, random: &primaryRandom)
+      // Use the heading entering this anchor so an already-generated prefix does not
+      // change when later movement samples are appended.
+      let forward = subtract(sampledCenterline[index], sampledCenterline[index - 1])
+      let forwardAngle = atan2(forward.y, forward.x)
+      let offset = randomOffset(
+        using: bendConfiguration, random: &primaryRandom, forwardAngle: forwardAngle)
       primaryBendPoints.append(add(center, offset))
     }
     primaryBendPoints.append(head)
-    let trunkPoints = addInterBendOffsets(
-      to: primaryBendPoints, random: &detailRandom)
-    let trunk = LightningStroke(points: trunkPoints)
+    let trunk = LightningStroke(points: primaryBendPoints)
 
     return LightningBolt(
       id: id, seed: seed, trunk: trunk,
       segments: makeSegmentProfiles(
-        points: trunkPoints, randomWidths: true, random: &profileRandom),
+        points: primaryBendPoints, randomWidths: true, random: &profileRandom),
       createdAt: createdAt,
-      stoppedAt: nil, glowScale: 1)
+      stoppedAt: nil, glowScale: 1,
+      bendConfiguration: bendConfiguration)
   }
 
   private func makeSegmentProfiles(
@@ -263,23 +317,6 @@ struct LightningTrailEngine {
       }
     }
     return profiles
-  }
-
-  private func addInterBendOffsets(
-    to points: [CGPoint], random: inout SplitMix64
-  ) -> [CGPoint] {
-    guard points.count >= 2 else { return points }
-
-    var detailedPoints = [points[0]]
-    detailedPoints.reserveCapacity(points.count * 2 - 1)
-    for (start, end) in zip(points, points.dropFirst()) {
-      let delta = subtract(end, start)
-      let progress = random.value(in: 0.38...0.62)
-      let center = add(start, multiply(delta, progress))
-      detailedPoints.append(add(center, randomOffset(in: 2...5, random: &random)))
-      detailedPoints.append(end)
-    }
-    return detailedPoints
   }
 
   private mutating func prune(at timestamp: TimeInterval) {
@@ -319,7 +356,8 @@ struct LightningTrailEngine {
       segments: active.segments,
       createdAt: active.createdAt,
       stoppedAt: timestamp,
-      glowScale: active.glowScale)
+      glowScale: active.glowScale,
+      bendConfiguration: active.bendConfiguration)
     bolts = [stopped]
     if let last = samples.last { samples = [last] }
   }
@@ -352,11 +390,47 @@ struct LightningTrailEngine {
   }
 
   private func randomOffset(
-    in radiusRange: ClosedRange<CGFloat>, random: inout SplitMix64
+    using configuration: LightningBendConfiguration,
+    random: inout SplitMix64,
+    forwardAngle: CGFloat
   ) -> CGPoint {
-    let angle = random.value(in: 0...(2 * .pi))
-    let radius = random.value(in: radiusRange)
+    let angle = random.value(
+      in: configuration.offsetDirectionMinRadians...configuration.offsetDirectionMaxRadians)
+      + forwardAngle
+    let radius = random.value(
+      in: configuration.offsetDistanceMin...configuration.offsetDistanceMax)
     return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+  }
+
+  private func randomResampledPath(
+    _ points: [CGPoint],
+    spacingRange: ClosedRange<CGFloat>,
+    random: inout SplitMix64
+  ) -> [CGPoint] {
+    guard let first = points.first, spacingRange.lowerBound > 0 else { return points }
+    var result = [quantized(first)]
+    var distanceUntilNext = random.value(in: spacingRange)
+
+    for (rawStart, rawEnd) in zip(points, points.dropFirst()) {
+      var cursor = rawStart
+      var remainingLength = distance(cursor, rawEnd)
+      guard remainingLength > 0 else { continue }
+      while remainingLength + 0.000_001 >= distanceUntilNext {
+        let progress = distanceUntilNext / remainingLength
+        cursor = add(cursor, multiply(subtract(rawEnd, cursor), progress))
+        let sampled = quantized(cursor)
+        if result.last != sampled { result.append(sampled) }
+        remainingLength = distance(cursor, rawEnd)
+        distanceUntilNext = random.value(in: spacingRange)
+      }
+      distanceUntilNext -= remainingLength
+    }
+
+    if let last = points.last {
+      let endpoint = quantized(last)
+      if result.last != endpoint { result.append(endpoint) }
+    }
+    return result
   }
 
 }

@@ -908,6 +908,13 @@ public struct MarkerVisualSettings: Codable, Equatable, Sendable {
 
 public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public var coreWidth: Double
+  /// Randomized distance range between major bend anchors in the full-motion lightning trunk, in points.
+  public var bendSpacingMin: Double
+  public var bendSpacingMax: Double
+  public var bendOffsetDistanceMin: Double
+  public var bendOffsetDistanceMax: Double
+  public var bendOffsetDirectionMin: Double
+  public var bendOffsetDirectionMax: Double
   public var blurRadius: Double
   public var coreColor: String
   public var outerGlowColor: String
@@ -918,12 +925,24 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
 
   public init(
     coreWidth: Double = 3.5,
+    bendSpacingMin: Double = 24,
+    bendSpacingMax: Double = 36,
+    bendOffsetDistanceMin: Double = 6,
+    bendOffsetDistanceMax: Double = 24,
+    bendOffsetDirectionMin: Double = 0,
+    bendOffsetDirectionMax: Double = 360,
     blurRadius: Double = 16,
     coreColor: String = "#FFFFFF",
     outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
     glowStrength: Double = 1.0
   ) {
     self.coreWidth = coreWidth
+    self.bendSpacingMin = bendSpacingMin
+    self.bendSpacingMax = bendSpacingMax
+    self.bendOffsetDistanceMin = bendOffsetDistanceMin
+    self.bendOffsetDistanceMax = bendOffsetDistanceMax
+    self.bendOffsetDirectionMin = bendOffsetDirectionMin
+    self.bendOffsetDirectionMax = bendOffsetDirectionMax
     self.blurRadius = blurRadius
     self.coreColor = coreColor
     self.outerGlowColor = outerGlowColor
@@ -934,7 +953,9 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
-    case lengthMultiplier, maxLength, coreWidth
+    case lengthMultiplier, maxLength, coreWidth, bendSpacingMin, bendSpacingMax
+    case bendOffsetDistanceMin, bendOffsetDistanceMax
+    case bendOffsetDirectionMin, bendOffsetDirectionMax
     case blurRadius, coreColor, outerGlowColor
     case outerGlowOpacity, glowStrength
   }
@@ -944,6 +965,16 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
     self.init(
       coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 3.5,
+      bendSpacingMin: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMin) ?? 24,
+      bendSpacingMax: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMax) ?? 36,
+      bendOffsetDistanceMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMin)
+        ?? 6,
+      bendOffsetDistanceMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMax)
+        ?? 24,
+      bendOffsetDirectionMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMin)
+        ?? 0,
+      bendOffsetDirectionMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMax)
+        ?? 360,
       blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
@@ -958,6 +989,12 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(coreWidth, forKey: .coreWidth)
+    try container.encode(bendSpacingMin, forKey: .bendSpacingMin)
+    try container.encode(bendSpacingMax, forKey: .bendSpacingMax)
+    try container.encode(bendOffsetDistanceMin, forKey: .bendOffsetDistanceMin)
+    try container.encode(bendOffsetDistanceMax, forKey: .bendOffsetDistanceMax)
+    try container.encode(bendOffsetDirectionMin, forKey: .bendOffsetDirectionMin)
+    try container.encode(bendOffsetDirectionMax, forKey: .bendOffsetDirectionMax)
     try container.encode(blurRadius, forKey: .blurRadius)
     try container.encode(coreColor, forKey: .coreColor)
     try container.encode(outerGlowColor, forKey: .outerGlowColor)
@@ -974,6 +1011,31 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       try validate(legacyMaxLength, named: "visual.trail.maxLength", range: 24...640)
     }
     try validate(coreWidth, named: "visual.trail.coreWidth", range: 0.5...12)
+    try validate(bendSpacingMin, named: "visual.trail.bendSpacingMin", range: 12...128)
+    try validate(bendSpacingMax, named: "visual.trail.bendSpacingMax", range: 12...128)
+    guard bendSpacingMin <= bendSpacingMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.bendSpacingMin",
+        description: "must be less than or equal to visual.trail.bendSpacingMax")
+    }
+    try validate(
+      bendOffsetDistanceMin, named: "visual.trail.bendOffsetDistanceMin", range: 0...128)
+    try validate(
+      bendOffsetDistanceMax, named: "visual.trail.bendOffsetDistanceMax", range: 0...128)
+    guard bendOffsetDistanceMin <= bendOffsetDistanceMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.bendOffsetDistanceMin",
+        description: "must be less than or equal to visual.trail.bendOffsetDistanceMax")
+    }
+    try validate(
+      bendOffsetDirectionMin, named: "visual.trail.bendOffsetDirectionMin", range: -360...360)
+    try validate(
+      bendOffsetDirectionMax, named: "visual.trail.bendOffsetDirectionMax", range: -360...360)
+    guard bendOffsetDirectionMin <= bendOffsetDirectionMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.bendOffsetDirectionMin",
+        description: "must be less than or equal to visual.trail.bendOffsetDirectionMax")
+    }
     try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
     try validateHexColor(coreColor, named: "visual.trail.coreColor")
     try validateHexColor(outerGlowColor, named: "visual.trail.outerGlowColor")

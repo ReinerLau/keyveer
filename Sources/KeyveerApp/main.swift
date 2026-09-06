@@ -686,6 +686,13 @@ private final class CursorMarkerController {
 
   func updateVisualSettings(_ settings: VisualSettings) {
     visualSettings = settings
+    lightning.updateBendOffsetConfiguration(
+      spacingMin: CGFloat(settings.trail.bendSpacingMin),
+      spacingMax: CGFloat(settings.trail.bendSpacingMax),
+      distanceMin: CGFloat(settings.trail.bendOffsetDistanceMin),
+      distanceMax: CGFloat(settings.trail.bendOffsetDistanceMax),
+      directionMinDegrees: CGFloat(settings.trail.bendOffsetDirectionMin),
+      directionMaxDegrees: CGFloat(settings.trail.bendOffsetDirectionMax))
 
     if let window {
       window.setContentSize(NSSize(width: markerCanvasSize, height: markerCanvasSize))

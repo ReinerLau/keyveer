@@ -1310,6 +1310,12 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertNil(trail["maxLength"])
     XCTAssertNil(trail["tailWidthScale"])
     XCTAssertNil(trail["headWidthScale"])
+    XCTAssertEqual(trail["bendOffsetDistanceMin"] as? Double, 6)
+    XCTAssertEqual(trail["bendOffsetDistanceMax"] as? Double, 24)
+    XCTAssertEqual(trail["bendOffsetDirectionMin"] as? Double, 0)
+    XCTAssertEqual(trail["bendOffsetDirectionMax"] as? Double, 360)
+    XCTAssertEqual(trail["bendSpacingMin"] as? Double, 24)
+    XCTAssertEqual(trail["bendSpacingMax"] as? Double, 36)
   }
 
   func testVisualConfigurationDefaultsAndPartialValuesAreAccepted() throws {
@@ -1339,6 +1345,40 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(decoded.visual.trail.blurRadius, 24)
     XCTAssertEqual(decoded.visual.trail.outerGlowOpacity, 0.35)
     XCTAssertEqual(decoded.visual.trail.glowStrength, 1.5)
+
+    var partialBend = try configurationObject()
+    partialBend["visual"] = [
+      "trail": ["bendOffsetDistanceMax": 40.0, "bendOffsetDirectionMin": 90.0]
+    ]
+    let partialDecoded = try JSONDecoder().decode(
+      RuntimeConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: partialBend)).validated()
+    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDistanceMin, 6)
+    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDistanceMax, 40)
+    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMin, 90)
+    XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMax, 360)
+    XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMin, 24)
+    XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMax, 36)
+
+    var customSpacing = try configurationObject()
+    customSpacing["visual"] = [
+      "trail": ["bendSpacingMin": 48.0, "bendSpacingMax": 72.0]
+    ]
+    let customSpacingDecoded = try JSONDecoder().decode(
+      RuntimeConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: customSpacing)).validated()
+    XCTAssertEqual(customSpacingDecoded.visual.trail.bendSpacingMin, 48)
+    XCTAssertEqual(customSpacingDecoded.visual.trail.bendSpacingMax, 72)
+
+    var forwardCone = try configurationObject()
+    forwardCone["visual"] = [
+      "trail": ["bendOffsetDirectionMin": -45.0, "bendOffsetDirectionMax": 45.0]
+    ]
+    let forwardConeDecoded = try JSONDecoder().decode(
+      RuntimeConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: forwardCone)).validated()
+    XCTAssertEqual(forwardConeDecoded.visual.trail.bendOffsetDirectionMin, -45)
+    XCTAssertEqual(forwardConeDecoded.visual.trail.bendOffsetDirectionMax, 45)
 
     var legacyLengthFields = try configurationObject()
     legacyLengthFields["visual"] = [
@@ -1423,6 +1463,65 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertTrue(strengthResponse.effects.contains(where: { effect in
       if case .configurationRejected(let reason) = effect {
         return reason.contains("visual.trail.glowStrength")
+      }
+      return false
+    }))
+
+    for (field, value) in [
+      ("bendSpacingMin", 11.0),
+      ("bendSpacingMax", 129.0),
+      ("bendOffsetDistanceMin", -1.0),
+      ("bendOffsetDistanceMax", 129.0),
+      ("bendOffsetDirectionMin", -361.0),
+      ("bendOffsetDirectionMax", 361.0),
+    ] {
+      var invalidBend = try configurationObject()
+      invalidBend["visual"] = ["trail": [field: value]]
+      let response = runtime.handle(
+        .configuration(try JSONSerialization.data(withJSONObject: invalidBend)))
+      XCTAssertTrue(response.effects.contains(where: { effect in
+        if case .configurationRejected(let reason) = effect {
+          return reason.contains("visual.trail.\(field)")
+        }
+        return false
+      }))
+    }
+
+    var reversedDistance = try configurationObject()
+    reversedDistance["visual"] = [
+      "trail": ["bendOffsetDistanceMin": 20.0, "bendOffsetDistanceMax": 10.0]
+    ]
+    let reversedDistanceResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedDistance)))
+    XCTAssertTrue(reversedDistanceResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("bendOffsetDistanceMin")
+      }
+      return false
+    }))
+
+    var reversedSpacing = try configurationObject()
+    reversedSpacing["visual"] = [
+      "trail": ["bendSpacingMin": 72.0, "bendSpacingMax": 48.0]
+    ]
+    let reversedSpacingResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedSpacing)))
+    XCTAssertTrue(reversedSpacingResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("bendSpacingMin")
+      }
+      return false
+    }))
+
+    var reversedDirection = try configurationObject()
+    reversedDirection["visual"] = [
+      "trail": ["bendOffsetDirectionMin": 270.0, "bendOffsetDirectionMax": 90.0]
+    ]
+    let reversedDirectionResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedDirection)))
+    XCTAssertTrue(reversedDirectionResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("bendOffsetDirectionMin")
       }
       return false
     }))

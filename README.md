@@ -55,6 +55,12 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
   },
   "trail": {
     "coreWidth": 3.5,
+    "bendSpacingMin": 24,
+    "bendSpacingMax": 36,
+    "bendOffsetDistanceMin": 6,
+    "bendOffsetDistanceMax": 24,
+    "bendOffsetDirectionMin": 0,
+    "bendOffsetDirectionMax": 360,
     "blurRadius": 16,
     "coreColor": "#FFFFFF",
     "outerGlowColor": "#008FEF",
@@ -64,7 +70,11 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
 }
 ```
 
-All visual fields are optional and use the values above when omitted. The marker and trail outer
+All visual fields are optional and use the values above when omitted. `bendSpacingMin` and
+`bendSpacingMax` define the random distance range between major bends in points: larger values make
+the lightning less dense, smaller values make it more angular. Trail bend offset distances are in
+points; direction limits are relative to the current path direction (0° forward, positive angles
+turn left, negative angles turn right, 180° backward) and are expressed in degrees. The marker and trail outer
 glows use Gaussian blur controlled by `glowRadius` and `blurRadius`. Colors use `#RRGGBB`;
 numeric limits are validated during reload.
 
