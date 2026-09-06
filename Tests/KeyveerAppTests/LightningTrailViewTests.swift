@@ -1,4 +1,5 @@
 import AppKit
+import KeyveerRuntime
 import XCTest
 
 @testable import KeyveerApp
@@ -47,6 +48,51 @@ final class LightningTrailViewTests: XCTestCase {
     XCTAssertGreaterThan(visibleGlow.alphaComponent, 0.03)
     XCTAssertGreaterThan(visibleGlow.blueComponent, visibleGlow.redComponent)
     XCTAssertGreaterThan(visibleGlow.alphaComponent, distantPixel.alphaComponent)
+  }
+
+  @MainActor
+  func testCustomTrailVisualSettingsAreCarriedByDrawingState() throws {
+    let settings = TrailVisualSettings(
+      coreWidth: 6,
+      tailWidthScale: 0.2, headWidthScale: 1.8, blurRadius: 24,
+      coreColor: "#FFFFFF", outerGlowColor: "#FF0000", glowStrength: 1.5)
+    let view = LightningTrailView(frame: NSRect(x: 0, y: 0, width: 200, height: 80))
+    view.drawingState = .init(
+      frame: LightningTrailFrame(
+        bolts: [
+          RenderedLightningBolt(
+            id: 2,
+            trunk: LightningStroke(
+              points: [CGPoint(x: 20, y: 40), CGPoint(x: 180, y: 40)]),
+            alpha: 1,
+            glowScale: 1)
+        ]),
+      canvasOrigin: .zero,
+      visualSettings: settings)
+
+    XCTAssertEqual(view.drawingState.visualSettings, settings)
+
+    let bitmap = try XCTUnwrap(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: 200,
+        pixelsHigh: 80,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0))
+    let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    view.draw(view.bounds)
+    NSGraphicsContext.restoreGraphicsState()
+
+    let outerGlow = try color(in: bitmap, x: 150, y: 50)
+    XCTAssertGreaterThan(outerGlow.redComponent, outerGlow.blueComponent)
+    XCTAssertGreaterThan(outerGlow.alphaComponent, 0.03)
   }
 
   private func color(in bitmap: NSBitmapImageRep, x: Int, y: Int) throws -> NSColor {

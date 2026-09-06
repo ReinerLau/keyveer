@@ -73,6 +73,7 @@ Record a check only after observing the result in the real app:
 - [ ] M/comma/period/slash produce the four scroll directions, including diagonal scrolling, low-speed scrolling, and precision/fast multipliers.
 - [ ] Physical mouse and trackpad movement still works in free mode, and keyboard movement resumes from the physical pointer location.
 - [ ] Valid configuration reload applies atomically; malformed, unknown-field, or out-of-range configuration keeps the previous valid behavior and reports the error.
+- [ ] A valid `visual.marker`/`visual.trail` partial configuration reload changes marker and trail appearance immediately, while omitted fields retain their defaults; invalid visual colors, dimensions, widths, or blur values preserve the previous appearance and report the error.
 - [ ] Lock, unlock, sleep, wake, session inactive/active, and each permission revocation leave free mode off and release all virtual buttons.
 - [ ] Event-tap timeout/user-input disable either recovers or reports a distinct failure; after failure the menu remains usable, free mode stays off, and keyboard input is passed through.
 - [ ] Diagnostic summary contains only capability/configuration/event-tap state and aggregate counters; it contains no raw keys, input text, app/window names, or pointer history.

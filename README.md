@@ -37,6 +37,41 @@ documented JSON fields, then choose Reload Configuration from the menu. Invalid 
 without replacing the last valid runtime configuration. The interactive real-app check is
 `./Scripts/configuration-smoke-test.sh`.
 
+The optional `visual` block controls the free-mode marker and lightning trail without changing
+`schemaVersion`:
+
+For a field-by-field explanation of all bindings, movement, scrolling, and visual settings, see
+[`docs/configuration.md`](docs/configuration.md).
+
+```json
+"visual": {
+    "marker": {
+      "coreDiameter": 7,
+    "glowRadius": 9,
+    "coreColor": "#FFFFFF",
+    "outerGlowColor": "#008FEF",
+    "outerGlowOpacity": 0.60,
+    "glowStrength": 1.0
+  },
+  "trail": {
+    "lengthMultiplier": 1.0,
+    "maxLength": 320,
+    "coreWidth": 3.5,
+    "tailWidthScale": 0.18,
+    "headWidthScale": 1.6,
+    "blurRadius": 16,
+    "coreColor": "#FFFFFF",
+    "outerGlowColor": "#008FEF",
+    "outerGlowOpacity": 1.0,
+    "glowStrength": 1.0
+  }
+}
+```
+
+All visual fields are optional and use the values above when omitted. The marker and trail outer
+glows use Gaussian blur controlled by `glowRadius` and `blurRadius`. Colors use `#RRGGBB`;
+numeric limits are validated during reload.
+
 For lock-screen, sleep, permission-loss, and event-tap recovery checks, run
 `./Scripts/recovery-smoke-test.sh`. These cases require system interaction and are recorded as an
 operator checklist; after each fault, free mode must remain off until explicitly re-enabled.

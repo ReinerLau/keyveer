@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import CoreGraphics
+import CoreImage
 import KeyveerRuntime
 import OSLog
 import QuartzCore
@@ -327,49 +328,107 @@ func configureOverlayPanel(_ panel: NSPanel) {
 }
 
 private enum LightningPalette {
-  static let electricBlue = NSColor(
-    srgbRed: 0x24 / 255, green: 0xD2 / 255, blue: 1, alpha: 1)
-  static let glowBlue = NSColor(
-    srgbRed: 0, green: 0x8F / 255, blue: 0xEF / 255, alpha: 1)
   static let whiteCoreAlpha: CGFloat = 0.98
-  static let innerGlowAlpha: CGFloat = 0.58
-  static let outerGlowAlpha: CGFloat = 0.30
-  static let edgeGlowAlpha: CGFloat = 0.10
+}
+
+private func color(from hex: String) -> NSColor {
+  let digits = hex.dropFirst()
+  guard
+    hex.count == 7, hex.first == "#",
+    let red = UInt8(digits.prefix(2), radix: 16),
+    let green = UInt8(digits.dropFirst(2).prefix(2), radix: 16),
+    let blue = UInt8(digits.dropFirst(4).prefix(2), radix: 16)
+  else {
+    return .white
+  }
+  return NSColor(
+    srgbRed: CGFloat(red) / 255, green: CGFloat(green) / 255, blue: CGFloat(blue) / 255,
+    alpha: 1)
+}
+
+private func drawGlowImage(
+  _ image: CGImage, in rect: CGRect, strength: CGFloat, on context: CGContext
+) {
+  let clampedStrength = max(0, strength)
+  let fullPasses = Int(floor(clampedStrength))
+  for _ in 0..<fullPasses {
+    context.draw(image, in: rect)
+  }
+  let fractionalPass = clampedStrength - CGFloat(fullPasses)
+  guard fractionalPass > 0 else { return }
+  context.saveGState()
+  context.setAlpha(fractionalPass)
+  context.draw(image, in: rect)
+  context.restoreGState()
 }
 
 final class GlowingMarkerView: NSView {
+  private static let blurContext = CIContext()
+
+  static func canvasSize(for settings: MarkerVisualSettings) -> CGFloat {
+    let sourceDiameter = CGFloat(settings.coreDiameter) * 1.5
+    let blurRadius = CGFloat(settings.glowRadius)
+    // Core Image's Gaussian kernel has visible falloff for roughly three radii
+    // on each side of the source. Keep that falloff inside the transparent canvas.
+    return max(28, sourceDiameter + blurRadius * 6 + 8)
+  }
+
+  var visualSettings: MarkerVisualSettings {
+    didSet { needsDisplay = true }
+  }
+
+  init(frame frameRect: NSRect, visualSettings: MarkerVisualSettings = MarkerVisualSettings()) {
+    self.visualSettings = visualSettings
+    super.init(frame: frameRect)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
   override func draw(_ dirtyRect: NSRect) {
     drawGlow()
 
-    NSColor.white.withAlphaComponent(LightningPalette.whiteCoreAlpha).setFill()
-    NSBezierPath(ovalIn: centeredSquare(side: 7)).fill()
+    color(from: visualSettings.coreColor)
+      .withAlphaComponent(LightningPalette.whiteCoreAlpha).setFill()
+    NSBezierPath(ovalIn: centeredSquare(side: CGFloat(visualSettings.coreDiameter))).fill()
   }
 
   private func drawGlow() {
     guard
       let context = NSGraphicsContext.current?.cgContext,
-      let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-      let gradient = CGGradient(
-        colorsSpace: colorSpace,
-        colors: [
-          LightningPalette.electricBlue.withAlphaComponent(0.68).cgColor,
-          LightningPalette.electricBlue.withAlphaComponent(LightningPalette.innerGlowAlpha)
-            .cgColor,
-          LightningPalette.glowBlue.withAlphaComponent(LightningPalette.outerGlowAlpha).cgColor,
-          LightningPalette.glowBlue.withAlphaComponent(LightningPalette.edgeGlowAlpha).cgColor,
-          LightningPalette.glowBlue.withAlphaComponent(0).cgColor,
-        ] as CFArray,
-        locations: [0, 0.35, 0.65, 0.86, 1])
+      let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
     else { return }
 
-    let center = CGPoint(x: bounds.midX, y: bounds.midY)
-    context.drawRadialGradient(
-      gradient,
-      startCenter: center,
-      startRadius: 0,
-      endCenter: center,
-      endRadius: 9,
-      options: [])
+    let width = max(Int(ceil(bounds.width)), 1)
+    let height = max(Int(ceil(bounds.height)), 1)
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    guard let bitmap = CGContext(
+      data: nil,
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: width * 4,
+      space: colorSpace,
+      bitmapInfo: bitmapInfo
+    ) else { return }
+
+    let outerColor = color(from: visualSettings.outerGlowColor)
+      .withAlphaComponent(CGFloat(visualSettings.outerGlowOpacity))
+    bitmap.setFillColor(outerColor.cgColor)
+    let sourceDiameter = CGFloat(visualSettings.coreDiameter) * 1.5
+    bitmap.fillEllipse(in: centeredSquare(side: sourceDiameter))
+    guard let sourceImage = bitmap.makeImage() else { return }
+
+    let input = CIImage(cgImage: sourceImage)
+    guard let filter = CIFilter(name: "CIGaussianBlur") else { return }
+    filter.setValue(input, forKey: kCIInputImageKey)
+    filter.setValue(Float(max(0.5, visualSettings.glowRadius)), forKey: kCIInputRadiusKey)
+    guard
+      let output = filter.outputImage?.cropped(to: input.extent),
+      let blurredImage = Self.blurContext.createCGImage(output, from: input.extent)
+    else { return }
+
+    drawGlowImage(
+      blurredImage, in: bounds, strength: CGFloat(visualSettings.glowStrength), on: context)
   }
 
   private func centeredSquare(side: CGFloat) -> NSRect {
@@ -382,6 +441,8 @@ final class GlowingMarkerView: NSView {
 }
 
 final class LightningTrailView: NSView {
+    private static let blurContext = CIContext()
+
     private struct CachedTrunkSegment {
       let path: NSBezierPath
       let widthScale: CGFloat
@@ -389,11 +450,24 @@ final class LightningTrailView: NSView {
 
     private struct CachedBoltPaths {
       let trunk: [CachedTrunkSegment]
+      let tailWidthScale: Double
+      let headWidthScale: Double
     }
 
     struct DrawingState {
       let frame: LightningTrailFrame
       let canvasOrigin: CGPoint
+      let visualSettings: TrailVisualSettings
+
+      init(
+        frame: LightningTrailFrame,
+        canvasOrigin: CGPoint,
+        visualSettings: TrailVisualSettings = TrailVisualSettings()
+      ) {
+        self.frame = frame
+        self.canvasOrigin = canvasOrigin
+        self.visualSettings = visualSettings
+      }
     }
 
     var drawingState = DrawingState(frame: .empty, canvasOrigin: .zero) {
@@ -414,44 +488,80 @@ final class LightningTrailView: NSView {
 
       for bolt in drawingState.frame.bolts {
         guard let paths = pathCache[bolt.id] else { continue }
-        draw(paths.trunk, alpha: bolt.alpha, glowScale: bolt.glowScale)
+        draw(
+          paths.trunk, alpha: bolt.alpha, glowScale: bolt.glowScale,
+          visualSettings: drawingState.visualSettings)
       }
     }
 
     private func draw(
-      _ segments: [CachedTrunkSegment], alpha: CGFloat, glowScale: CGFloat
+      _ segments: [CachedTrunkSegment], alpha: CGFloat, glowScale: CGFloat,
+      visualSettings: TrailVisualSettings
     ) {
       guard alpha > 0, !segments.isEmpty else { return }
-      strokeWithBlurredGlow(
+      strokeWithGaussianGlow(
         segments,
-        baseWidth: 6.5,
-        color: LightningPalette.glowBlue.withAlphaComponent(
-          alpha * LightningPalette.edgeGlowAlpha * glowScale),
-        glowColor: LightningPalette.glowBlue.withAlphaComponent(
-          min(1, alpha * glowScale)),
-        blurRadius: 16)
+        baseWidth: CGFloat(visualSettings.coreWidth),
+        glowColor: color(from: visualSettings.outerGlowColor).withAlphaComponent(
+          min(1, alpha * glowScale * CGFloat(visualSettings.outerGlowOpacity))),
+        blurRadius: CGFloat(visualSettings.blurRadius))
       stroke(
-        segments, baseWidth: 5,
-        color: LightningPalette.electricBlue.withAlphaComponent(
-          alpha * LightningPalette.innerGlowAlpha * glowScale))
-      stroke(
-        segments, baseWidth: 3.5,
-        color: NSColor.white.withAlphaComponent(
+        segments, baseWidth: CGFloat(visualSettings.coreWidth),
+        color: color(from: visualSettings.coreColor).withAlphaComponent(
           min(1, alpha * LightningPalette.whiteCoreAlpha)))
     }
 
-    private func strokeWithBlurredGlow(
+    private func strokeWithGaussianGlow(
       _ segments: [CachedTrunkSegment],
       baseWidth: CGFloat,
-      color: NSColor,
       glowColor: NSColor,
       blurRadius: CGFloat
     ) {
-      guard let context = NSGraphicsContext.current?.cgContext else { return }
-      context.saveGState()
-      defer { context.restoreGState() }
-      context.setShadow(offset: .zero, blur: blurRadius, color: glowColor.cgColor)
-      stroke(segments, baseWidth: baseWidth, color: color)
+      guard
+        let context = NSGraphicsContext.current?.cgContext,
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+      else { return }
+
+      let pathBounds = segments.reduce(CGRect.null) { result, segment in
+        result.union(segment.path.bounds)
+      }
+      guard !pathBounds.isNull else { return }
+      let padding = max(1, blurRadius * 3 + baseWidth / 2 + 2)
+      let imageRect = pathBounds.insetBy(dx: -padding, dy: -padding)
+      let width = max(Int(ceil(imageRect.width)), 1)
+      let height = max(Int(ceil(imageRect.height)), 1)
+      guard let bitmap = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      ) else { return }
+
+      let bitmapGraphics = NSGraphicsContext(cgContext: bitmap, flipped: false)
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = bitmapGraphics
+      bitmap.translateBy(x: -imageRect.origin.x, y: -imageRect.origin.y)
+      stroke(segments, baseWidth: baseWidth, color: glowColor)
+      NSGraphicsContext.restoreGraphicsState()
+
+      guard
+        let sourceImage = bitmap.makeImage(),
+        let filter = CIFilter(name: "CIGaussianBlur")
+      else { return }
+      let input = CIImage(cgImage: sourceImage)
+      filter.setValue(input, forKey: kCIInputImageKey)
+      filter.setValue(Float(max(0, blurRadius)), forKey: kCIInputRadiusKey)
+      guard
+        let output = filter.outputImage?.cropped(to: input.extent),
+        let blurredImage = Self.blurContext.createCGImage(output, from: input.extent)
+      else { return }
+
+      drawGlowImage(
+        blurredImage, in: imageRect, strength: CGFloat(drawingState.visualSettings.glowStrength),
+        on: context)
     }
 
     private func stroke(
@@ -467,9 +577,17 @@ final class LightningTrailView: NSView {
     private func updatePathCache() {
       let activeIDs = Set(drawingState.frame.bolts.map(\.id))
       pathCache = pathCache.filter { activeIDs.contains($0.key) }
-      for bolt in drawingState.frame.bolts where pathCache[bolt.id] == nil {
+      for bolt in drawingState.frame.bolts {
+        if let cached = pathCache[bolt.id],
+          cached.tailWidthScale == drawingState.visualSettings.tailWidthScale,
+          cached.headWidthScale == drawingState.visualSettings.headWidthScale
+        {
+          continue
+        }
         let segments = bolt.trunk.taperedSegments(
-          maximumLength: 4, tailWidthScale: 0.18, headWidthScale: 1.6)
+          maximumLength: 4,
+          tailWidthScale: CGFloat(drawingState.visualSettings.tailWidthScale),
+          headWidthScale: CGFloat(drawingState.visualSettings.headWidthScale))
         pathCache[bolt.id] = CachedBoltPaths(
           trunk: segments.map { segment in
             let path = NSBezierPath()
@@ -478,7 +596,9 @@ final class LightningTrailView: NSView {
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
             return CachedTrunkSegment(path: path, widthScale: segment.widthScale)
-          })
+          },
+          tailWidthScale: drawingState.visualSettings.tailWidthScale,
+          headWidthScale: drawingState.visualSettings.headWidthScale)
       }
     }
 }
@@ -489,12 +609,16 @@ private final class CursorMarkerController {
   private var trailWindow: NSPanel?
   private var lightning = LightningTrailEngine()
   private var accessibilityObserver: NSObjectProtocol?
-  private let markerDiameter: CGFloat = 10
-  private let markerCanvasSize: CGFloat = 28
+  private var visualSettings = VisualSettings()
   private let offset: CGFloat = 12
   private var lastPoint: Point?
   private var isShown = false
   private var loggedTrailPanelFailure = false
+
+  private var markerDiameter: CGFloat { CGFloat(visualSettings.marker.diameter) }
+  private var markerCanvasSize: CGFloat {
+    GlowingMarkerView.canvasSize(for: visualSettings.marker)
+  }
 
   init(
     panelFactory: @escaping (NSRect) -> NSPanel? = { frame in
@@ -551,6 +675,26 @@ private final class CursorMarkerController {
     lightning.clear()
   }
 
+  func updateVisualSettings(_ settings: VisualSettings) {
+    visualSettings = settings
+    lightning.updateVisualSettings(settings.trail)
+
+    if let window {
+      window.setContentSize(NSSize(width: markerCanvasSize, height: markerCanvasSize))
+      if let markerView = window.contentView as? GlowingMarkerView {
+        markerView.visualSettings = settings.marker
+      }
+      if let lastPoint { move(window, to: lastPoint) }
+    }
+    if let trailView = trailWindow?.contentView as? LightningTrailView {
+      trailView.drawingState = .init(
+        frame: trailView.drawingState.frame,
+        canvasOrigin: trailWindow?.frame.origin ?? .zero,
+        visualSettings: settings.trail)
+    }
+    render(at: CACurrentMediaTime())
+  }
+
   func move(to point: Point) {
     let now = CACurrentMediaTime()
     lastPoint = point
@@ -580,7 +724,8 @@ private final class CursorMarkerController {
       return nil
     }
     configure(panel)
-    panel.contentView = GlowingMarkerView(frame: panel.contentRect(forFrameRect: panel.frame))
+    panel.contentView = GlowingMarkerView(
+      frame: panel.contentRect(forFrameRect: panel.frame), visualSettings: visualSettings.marker)
     return panel
   }
 
@@ -605,7 +750,9 @@ private final class CursorMarkerController {
       trailWindow?.orderOut(nil)
       if let trailView = trailWindow?.contentView as? LightningTrailView {
         trailView.drawingState = .init(
-          frame: .empty, canvasOrigin: trailWindow?.frame.origin ?? .zero)
+          frame: .empty,
+          canvasOrigin: trailWindow?.frame.origin ?? .zero,
+          visualSettings: visualSettings.trail)
       }
     } else {
       if trailWindow == nil {
@@ -618,7 +765,10 @@ private final class CursorMarkerController {
         }
       }
       if let trailWindow, let trailView = trailWindow.contentView as? LightningTrailView {
-        trailView.drawingState = .init(frame: frame, canvasOrigin: trailWindow.frame.origin)
+        trailView.drawingState = .init(
+          frame: frame,
+          canvasOrigin: trailWindow.frame.origin,
+          visualSettings: visualSettings.trail)
         trailWindow.orderFrontRegardless()
       }
     }
@@ -1158,7 +1308,13 @@ private final class KeyveerApplicationController: NSObject {
           at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try RuntimeConfiguration.defaultJSON.write(to: url, options: .atomic)
       }
-      apply(runtimeResponse(for: .configuration(try Data(contentsOf: url))))
+      let data = try Data(contentsOf: url)
+      let decoded = try? JSONDecoder().decode(RuntimeConfiguration.self, from: data).validated()
+      let response = runtimeResponse(for: .configuration(data))
+      apply(response)
+      if response.effects.contains(.configurationAccepted), let decoded {
+        cursorMarker.updateVisualSettings(decoded.visual)
+      }
     } catch {
       diagnostics.recordConfigurationReadFailure()
       showConfigurationError("could not read configuration: \(error.localizedDescription)")

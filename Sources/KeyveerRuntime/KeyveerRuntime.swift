@@ -835,6 +835,179 @@ public struct ScrollSettings: Codable, Equatable, Sendable {
   }
 }
 
+public struct MarkerVisualSettings: Codable, Equatable, Sendable {
+  public var coreDiameter: Double
+  public var glowRadius: Double
+  public var coreColor: String
+  public var outerGlowColor: String
+  public var outerGlowOpacity: Double
+  public var glowStrength: Double
+
+  /// Layout diameter derived from the configured core and glow extents.
+  public var diameter: Double { max(coreDiameter, glowRadius * 2) }
+
+  public init(
+    coreDiameter: Double = 7, glowRadius: Double = 9,
+    coreColor: String = "#FFFFFF",
+    outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 0.60,
+    glowStrength: Double = 1.0
+  ) {
+    self.coreDiameter = coreDiameter
+    self.glowRadius = glowRadius
+    self.coreColor = coreColor
+    self.outerGlowColor = outerGlowColor
+    self.outerGlowOpacity = outerGlowOpacity
+    self.glowStrength = glowStrength
+  }
+
+  private enum CodingKeys: String, CodingKey, CaseIterable {
+    case diameter, coreDiameter, glowRadius, coreColor, outerGlowColor
+    case outerGlowOpacity, glowStrength
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
+    // `diameter` was previously configurable; accept it for compatibility but derive it now.
+    _ = try container.decodeIfPresent(Double.self, forKey: .diameter)
+    self.init(
+      coreDiameter: try container.decodeIfPresent(Double.self, forKey: .coreDiameter) ?? 7,
+      glowRadius: try container.decodeIfPresent(Double.self, forKey: .glowRadius) ?? 9,
+      coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
+      outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
+        ?? "#008FEF",
+      outerGlowOpacity: try container.decodeIfPresent(Double.self, forKey: .outerGlowOpacity)
+        ?? 0.60,
+      glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 1.0)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(coreDiameter, forKey: .coreDiameter)
+    try container.encode(glowRadius, forKey: .glowRadius)
+    try container.encode(coreColor, forKey: .coreColor)
+    try container.encode(outerGlowColor, forKey: .outerGlowColor)
+    try container.encode(outerGlowOpacity, forKey: .outerGlowOpacity)
+    try container.encode(glowStrength, forKey: .glowStrength)
+  }
+
+  fileprivate func validated() throws -> MarkerVisualSettings {
+    try validate(coreDiameter, named: "visual.marker.coreDiameter", range: 1...24)
+    try validate(glowRadius, named: "visual.marker.glowRadius", range: 2...32)
+    try validateHexColor(coreColor, named: "visual.marker.coreColor")
+    try validateHexColor(outerGlowColor, named: "visual.marker.outerGlowColor")
+    try validate(outerGlowOpacity, named: "visual.marker.outerGlowOpacity", range: 0...1)
+    try validate(glowStrength, named: "visual.marker.glowStrength", range: 0...3)
+    return self
+  }
+}
+
+public struct TrailVisualSettings: Codable, Equatable, Sendable {
+  public var lengthMultiplier: Double
+  public var maxLength: Double
+  public var coreWidth: Double
+  public var tailWidthScale: Double
+  public var headWidthScale: Double
+  public var blurRadius: Double
+  public var coreColor: String
+  public var outerGlowColor: String
+  public var outerGlowOpacity: Double
+  public var glowStrength: Double
+
+  public init(
+    lengthMultiplier: Double = 1, maxLength: Double = 320,
+    coreWidth: Double = 3.5,
+    tailWidthScale: Double = 0.18, headWidthScale: Double = 1.6, blurRadius: Double = 16,
+    coreColor: String = "#FFFFFF",
+    outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
+    glowStrength: Double = 1.0
+  ) {
+    self.lengthMultiplier = lengthMultiplier
+    self.maxLength = maxLength
+    self.coreWidth = coreWidth
+    self.tailWidthScale = tailWidthScale
+    self.headWidthScale = headWidthScale
+    self.blurRadius = blurRadius
+    self.coreColor = coreColor
+    self.outerGlowColor = outerGlowColor
+    self.outerGlowOpacity = outerGlowOpacity
+    self.glowStrength = glowStrength
+  }
+
+  private enum CodingKeys: String, CodingKey, CaseIterable {
+    case lengthMultiplier, maxLength, coreWidth
+    case tailWidthScale, headWidthScale, blurRadius, coreColor, outerGlowColor
+    case outerGlowOpacity, glowStrength
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
+    self.init(
+      lengthMultiplier: try container.decodeIfPresent(Double.self, forKey: .lengthMultiplier) ?? 1,
+      maxLength: try container.decodeIfPresent(Double.self, forKey: .maxLength) ?? 320,
+      coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 3.5,
+      tailWidthScale: try container.decodeIfPresent(Double.self, forKey: .tailWidthScale) ?? 0.18,
+      headWidthScale: try container.decodeIfPresent(Double.self, forKey: .headWidthScale) ?? 1.6,
+      blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
+      coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
+      outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
+        ?? "#008FEF",
+      outerGlowOpacity: try container.decodeIfPresent(Double.self, forKey: .outerGlowOpacity)
+        ?? 1.0,
+      glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 1.0)
+  }
+
+  fileprivate func validated() throws -> TrailVisualSettings {
+    try validate(lengthMultiplier, named: "visual.trail.lengthMultiplier", range: 0.25...3)
+    try validate(maxLength, named: "visual.trail.maxLength", range: 24...640)
+    try validate(coreWidth, named: "visual.trail.coreWidth", range: 0.5...12)
+    try validate(tailWidthScale, named: "visual.trail.tailWidthScale", range: 0.05...1)
+    try validate(headWidthScale, named: "visual.trail.headWidthScale", range: 0.25...3)
+    try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
+    guard headWidthScale >= tailWidthScale else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.headWidthScale", description: "must be at least tailWidthScale")
+    }
+    try validateHexColor(coreColor, named: "visual.trail.coreColor")
+    try validateHexColor(outerGlowColor, named: "visual.trail.outerGlowColor")
+    try validate(outerGlowOpacity, named: "visual.trail.outerGlowOpacity", range: 0...1)
+    try validate(glowStrength, named: "visual.trail.glowStrength", range: 0...3)
+    return self
+  }
+}
+
+public struct VisualSettings: Codable, Equatable, Sendable {
+  public var marker: MarkerVisualSettings
+  public var trail: TrailVisualSettings
+
+  public init(
+    marker: MarkerVisualSettings = MarkerVisualSettings(),
+    trail: TrailVisualSettings = TrailVisualSettings()
+  ) {
+    self.marker = marker
+    self.trail = trail
+  }
+
+  private enum CodingKeys: String, CodingKey, CaseIterable { case marker, trail }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
+    self.init(
+      marker: try container.decodeIfPresent(MarkerVisualSettings.self, forKey: .marker)
+        ?? MarkerVisualSettings(),
+      trail: try container.decodeIfPresent(TrailVisualSettings.self, forKey: .trail)
+        ?? TrailVisualSettings())
+  }
+
+  fileprivate func validated() throws -> VisualSettings {
+    _ = try marker.validated()
+    _ = try trail.validated()
+    return self
+  }
+}
+
 private struct LegacyIndicatorSettings: Codable, Equatable, Sendable {
   public var enabled: Bool
   public var size: Double
@@ -923,25 +1096,28 @@ public struct RuntimeConfiguration: Codable, Equatable, Sendable {
   public var movement: MotionSettings
   public var scrolling: ScrollSettings
   public var optionTapMilliseconds: Double
+  public var visual: VisualSettings
 
   public init(
     schemaVersion: Int = 3, bindings: KeyBindings = KeyBindings(),
     movement: MotionSettings = MotionSettings(), scrolling: ScrollSettings = ScrollSettings(),
-    optionTapMilliseconds: Double = 250
+    optionTapMilliseconds: Double = 250, visual: VisualSettings = VisualSettings()
   ) {
     self.schemaVersion = schemaVersion
     self.bindings = bindings
     self.movement = movement
     self.scrolling = scrolling
     self.optionTapMilliseconds = optionTapMilliseconds
+    self.visual = visual
   }
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
-    case schemaVersion, bindings, movement, scrolling, optionTapMilliseconds
+    case schemaVersion, bindings, movement, scrolling, optionTapMilliseconds, visual
   }
 
   private enum DecodingKeys: String, CodingKey, CaseIterable {
-    case schemaVersion, bindings, movement, scrolling, optionTapMilliseconds, indicator, cursorHalo
+    case schemaVersion, bindings, movement, scrolling, optionTapMilliseconds, visual, indicator,
+      cursorHalo
   }
 
   public init(from decoder: Decoder) throws {
@@ -954,6 +1130,8 @@ public struct RuntimeConfiguration: Codable, Equatable, Sendable {
     let movement = try container.decode(MotionSettings.self, forKey: .movement)
     let scrolling = try container.decode(ScrollSettings.self, forKey: .scrolling)
     let optionTapMilliseconds = try container.decode(Double.self, forKey: .optionTapMilliseconds)
+    let visual = try container.decodeIfPresent(VisualSettings.self, forKey: .visual)
+      ?? VisualSettings()
     let legacyIndicator = try container.decodeIfPresent(LegacyIndicatorSettings.self, forKey: .indicator)
     switch schemaVersion {
     case 1:
@@ -961,11 +1139,12 @@ public struct RuntimeConfiguration: Codable, Equatable, Sendable {
       _ = legacyIndicator
       self.init(
         schemaVersion: 3, bindings: legacy.migrated, movement: movement, scrolling: scrolling,
-        optionTapMilliseconds: optionTapMilliseconds)
+        optionTapMilliseconds: optionTapMilliseconds, visual: visual)
     case 2:
       self.init(
         schemaVersion: 3, bindings: try container.decode(KeyBindings.self, forKey: .bindings),
-        movement: movement, scrolling: scrolling, optionTapMilliseconds: optionTapMilliseconds)
+        movement: movement, scrolling: scrolling, optionTapMilliseconds: optionTapMilliseconds,
+        visual: visual)
       _ = legacyIndicator
     case 3:
       guard !container.contains(.indicator) else {
@@ -973,7 +1152,8 @@ public struct RuntimeConfiguration: Codable, Equatable, Sendable {
       }
       self.init(
         schemaVersion: 3, bindings: try container.decode(KeyBindings.self, forKey: .bindings),
-        movement: movement, scrolling: scrolling, optionTapMilliseconds: optionTapMilliseconds)
+        movement: movement, scrolling: scrolling, optionTapMilliseconds: optionTapMilliseconds,
+        visual: visual)
     default:
       throw ConfigurationError.unsupportedSchemaVersion(schemaVersion)
     }
@@ -997,6 +1177,7 @@ public struct RuntimeConfiguration: Codable, Equatable, Sendable {
     try validate(scrolling.fastMultiplier, named: "scrolling.fastMultiplier", range: 1...10)
     try validate(
       scrolling.smoothingMilliseconds, named: "scrolling.smoothingMilliseconds", range: 1...1_000)
+    _ = try visual.validated()
     let activation = Key(configurationName: bindings.activation)
     guard activation == .leftOption || activation == .rightOption else {
       throw ConfigurationError.invalidActivationKey(bindings.activation)
@@ -1180,6 +1361,20 @@ private func validate(_ value: Double, named name: String, range: ClosedRange<Do
     throw ConfigurationError.invalidValue(
       name: name,
       description: "must be between \(range.lowerBound) and \(range.upperBound)")
+  }
+}
+
+private func validateHexColor(_ value: String, named name: String) throws {
+  let digits = value.dropFirst()
+  let isHexDigit: (Character) -> Bool = { character in
+    switch character {
+    case "0"..."9", "a"..."f", "A"..."F": return true
+    default: return false
+    }
+  }
+  guard value.count == 7, value.first == "#", digits.allSatisfy(isHexDigit) else {
+    throw ConfigurationError.invalidValue(
+      name: name, description: "must be a six-digit hexadecimal color such as #24D2FF")
   }
 }
 

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import KeyveerRuntime
 
 struct LightningStroke: Equatable {
   let points: [CGPoint]
@@ -102,19 +103,27 @@ struct LightningTrailEngine {
   private static let tailLookback: TimeInterval = 0.36
   private static let minimumSpan: CGFloat = 10
   private static let normalMinimumSpan: CGFloat = 24
-  private static let maximumSpan: CGFloat = 320
   private static let highSpeed: CGFloat = 900
 
   private var samples: [Sample] = []
   private var bolts: [LightningBolt] = []
   private var random: SplitMix64
+  private var visualSettings: TrailVisualSettings
   private var lastEmissionTime: TimeInterval?
   private var lastEmittedPoint: CGPoint?
   private var nextBoltID: UInt64 = 0
   private(set) var reduceMotion = false
 
-  init(seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max)) {
+  init(
+    seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max),
+    visualSettings: TrailVisualSettings = TrailVisualSettings()
+  ) {
     random = SplitMix64(seed: seed)
+    self.visualSettings = visualSettings
+  }
+
+  mutating func updateVisualSettings(_ settings: TrailVisualSettings) {
+    visualSettings = settings
   }
 
   mutating func setReduceMotion(_ enabled: Bool) {
@@ -160,7 +169,9 @@ struct LightningTrailEngine {
     let speed = estimatedSpeed(at: timestamp)
     let accelerationProgress = min(1, max(0, (speed - 600) / (Self.highSpeed - 600)))
     let spanFactor = 0.18 + accelerationProgress * 0.12
-    let targetSpan = min(Self.maximumSpan, max(Self.normalMinimumSpan, speed * spanFactor))
+    let targetSpan = min(
+      CGFloat(visualSettings.maxLength),
+      max(Self.normalMinimumSpan, speed * spanFactor * CGFloat(visualSettings.lengthMultiplier)))
     guard
       let centerline = tailPath(
         for: current.point, targetSpan: targetSpan, at: timestamp)

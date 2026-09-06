@@ -1281,6 +1281,110 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(bindings["activation"] as? String, "leftOption")
     XCTAssertNil(bindings["toggle"])
     XCTAssertNil(bindings["escape"])
+
+    let visual = try XCTUnwrap(object["visual"] as? [String: Any])
+    let marker = try XCTUnwrap(visual["marker"] as? [String: Any])
+    let trail = try XCTUnwrap(visual["trail"] as? [String: Any])
+    XCTAssertNil(marker["innerGlowColor"])
+    XCTAssertNil(trail["innerGlowColor"])
+    XCTAssertNil(trail["innerGlowWidth"])
+  }
+
+  func testVisualConfigurationDefaultsAndPartialValuesAreAccepted() throws {
+    let defaults = try JSONDecoder()
+      .decode(RuntimeConfiguration.self, from: RuntimeConfiguration.defaultJSON)
+      .validated().visual
+    XCTAssertEqual(defaults.marker.glowRadius, 9)
+    XCTAssertEqual(defaults.marker.outerGlowOpacity, 0.60)
+    XCTAssertEqual(defaults.marker.glowStrength, 1.0)
+    XCTAssertEqual(defaults.trail.maxLength, 320)
+    XCTAssertEqual(defaults.trail.outerGlowOpacity, 1.0)
+    XCTAssertEqual(defaults.trail.glowStrength, 1.0)
+
+    var object = try configurationObject()
+    object["visual"] = [
+      "marker": ["glowRadius": 14.0],
+      "trail": ["blurRadius": 24.0, "outerGlowOpacity": 0.35, "glowStrength": 1.5],
+    ]
+    let response = KeyveerRuntime(permissions: .allGranted).handle(
+      .configuration(try JSONSerialization.data(withJSONObject: object)))
+    XCTAssertTrue(response.effects.contains(.configurationAccepted))
+
+    let decoded = try JSONDecoder().decode(
+      RuntimeConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: object)).validated()
+    XCTAssertEqual(decoded.visual.marker.glowRadius, 14)
+    XCTAssertEqual(decoded.visual.marker.diameter, 28)
+    XCTAssertEqual(decoded.visual.trail.blurRadius, 24)
+    XCTAssertEqual(decoded.visual.trail.outerGlowOpacity, 0.35)
+    XCTAssertEqual(decoded.visual.trail.glowStrength, 1.5)
+    XCTAssertEqual(decoded.visual.trail.maxLength, 320)
+
+    var legacyV3 = try configurationObject()
+    legacyV3.removeValue(forKey: "visual")
+    let legacyResponse = KeyveerRuntime(permissions: .allGranted).handle(
+      .configuration(try JSONSerialization.data(withJSONObject: legacyV3)))
+    XCTAssertTrue(legacyResponse.effects.contains(.configurationAccepted))
+  }
+
+  func testVisualConfigurationRejectsInvalidColorAndWidthRelationships() throws {
+    let runtime = KeyveerRuntime(permissions: .allGranted)
+    var removedField = try configurationObject()
+    removedField["visual"] = ["marker": ["innerGlowColor": "cyan"]]
+    let removedFieldResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: removedField)))
+    XCTAssertTrue(removedFieldResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("unknown field") && reason.contains("innerGlowColor")
+      }
+      return false
+    }))
+
+    var invalidWidths = try configurationObject()
+    invalidWidths["visual"] = [
+      "trail": ["coreWidth": 0.1],
+    ]
+    let widthResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: invalidWidths)))
+    XCTAssertTrue(widthResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.coreWidth")
+      }
+      return false
+    }))
+
+    var invalidField = try configurationObject()
+    invalidField["visual"] = ["trail": ["unexpected": true]]
+    let fieldResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: invalidField)))
+    XCTAssertTrue(fieldResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("unknown field") && reason.contains("unexpected")
+      }
+      return false
+    }))
+
+    var invalidOpacity = try configurationObject()
+    invalidOpacity["visual"] = ["marker": ["outerGlowOpacity": 1.1]]
+    let opacityResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: invalidOpacity)))
+    XCTAssertTrue(opacityResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.marker.outerGlowOpacity")
+      }
+      return false
+    }))
+
+    var invalidStrength = try configurationObject()
+    invalidStrength["visual"] = ["trail": ["glowStrength": 3.1]]
+    let strengthResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: invalidStrength)))
+    XCTAssertTrue(strengthResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.glowStrength")
+      }
+      return false
+    }))
   }
 
   func testSchemaV3RejectsRetiredIndicatorField() throws {

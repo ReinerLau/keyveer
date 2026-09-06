@@ -127,6 +127,10 @@ func run() -> Int32 {
       print("FAIL: generated configuration has no schemaVersion 3.")
       return 1
     }
+    guard generated["visual"] is [String: Any] else {
+      print("FAIL: generated configuration has no visual defaults.")
+      return 1
+    }
     print("PASS: first launch generated config.json with schemaVersion 3.")
     Thread.sleep(forTimeInterval: 1)
 
@@ -134,8 +138,16 @@ func run() -> Int32 {
     var movement = valid["movement"] as? [String: Any] ?? [:]
     movement["baseSpeed"] = 600.0
     valid["movement"] = movement
+    var visual = valid["visual"] as? [String: Any] ?? [:]
+    var marker = visual["marker"] as? [String: Any] ?? [:]
+    marker["glowRadius"] = 12.0
+    visual["marker"] = marker
+    var trail = visual["trail"] as? [String: Any] ?? [:]
+    trail["blurRadius"] = 24.0
+    visual["trail"] = trail
+    valid["visual"] = visual
     try writeObject(valid)
-    guard ask("Select Keyveer > Reload Configuration, then confirm it shows no error and the app remains usable.") else {
+    guard ask("Select Keyveer > Reload Configuration, then confirm it shows no error, the marker/trail appearance changes, and the app remains usable.") else {
       print("FAIL: valid configuration reload was not confirmed.")
       return 1
     }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import KeyveerRuntime
 import XCTest
 
 @testable import KeyveerApp
@@ -33,6 +34,22 @@ final class LightningTrailEngineTests: XCTestCase {
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
     XCTAssertEqual(bolt.trunk.points.first!.x, 180, accuracy: 0.001)
     XCTAssertEqual(bolt.trunk.points.last!.x, 500, accuracy: 0.001)
+  }
+
+  func testVisualLengthSettingsChangeOnlyNewBoltGeometry() {
+    var engine = LightningTrailEngine(seed: 2)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
+    let original = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+
+    engine.updateVisualSettings(
+      TrailVisualSettings(lengthMultiplier: 0.5, maxLength: 640))
+    let stillFrozen = try! XCTUnwrap(engine.frame(at: 0.15).bolts.first)
+    XCTAssertEqual(stillFrozen.trunk, original.trunk)
+
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0.2)
+    let updated = try! XCTUnwrap(engine.frame(at: 0.2).bolts.first)
+    XCTAssertGreaterThan(updated.trunk.points.first!.x, original.trunk.points.first!.x)
   }
 
   func testFirstAccelerationLevelProducesALongerBolt() {
