@@ -451,7 +451,7 @@ final class LightningTrailView: NSView {
 
     private struct CachedBoltPaths {
       let trunk: [CachedTrunkSegment]
-      let arc: [CachedTrunkSegment]?
+      let arcs: [UInt64: [CachedTrunkSegment]]
     }
 
     struct DrawingState {
@@ -492,7 +492,8 @@ final class LightningTrailView: NSView {
           paths.trunk, renderedSegments: bolt.segments,
           alpha: bolt.alpha, glowScale: bolt.glowScale,
           visualSettings: drawingState.visualSettings)
-        if let arc = bolt.arc, let arcPaths = paths.arc {
+        for arc in bolt.arcs {
+          guard let arcPaths = paths.arcs[arc.id] else { continue }
           draw(
             arcPaths, renderedSegments: arc.segments,
             alpha: bolt.alpha * arc.opacity, glowScale: bolt.glowScale,
@@ -606,21 +607,21 @@ final class LightningTrailView: NSView {
           cachedSegments.removeSubrange(sharedCount...)
         }
         for segment in bolt.segments.dropFirst(cachedSegments.count) {
-            let path = NSBezierPath()
-            path.move(to: segment.start)
-            path.line(to: segment.end)
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            cachedSegments.append(
-              CachedTrunkSegment(path: path, start: segment.start, end: segment.end))
+          let path = NSBezierPath()
+          path.move(to: segment.start)
+          path.line(to: segment.end)
+          path.lineCapStyle = .round
+          path.lineJoinStyle = .round
+          cachedSegments.append(
+            CachedTrunkSegment(path: path, start: segment.start, end: segment.end))
         }
-        let cachedArc: [CachedTrunkSegment]?
-        if let arc = bolt.arc {
-          cachedArc = updateCachedSegments(pathCache[bolt.id]?.arc ?? [], with: arc.segments)
-        } else {
-          cachedArc = nil
+        var cachedArcs = pathCache[bolt.id]?.arcs ?? [:]
+        let activeArcIDs = Set(bolt.arcs.map(\.id))
+        cachedArcs = cachedArcs.filter { activeArcIDs.contains($0.key) }
+        for arc in bolt.arcs {
+          cachedArcs[arc.id] = updateCachedSegments(cachedArcs[arc.id] ?? [], with: arc.segments)
         }
-        pathCache[bolt.id] = CachedBoltPaths(trunk: cachedSegments, arc: cachedArc)
+        pathCache[bolt.id] = CachedBoltPaths(trunk: cachedSegments, arcs: cachedArcs)
       }
     }
 
@@ -731,7 +732,11 @@ private final class CursorMarkerController {
       distanceMin: CGFloat(settings.trail.bendOffsetDistanceMin),
       distanceMax: CGFloat(settings.trail.bendOffsetDistanceMax),
       directionMinDegrees: CGFloat(settings.trail.bendOffsetDirectionMin),
-      directionMaxDegrees: CGFloat(settings.trail.bendOffsetDirectionMax))
+      directionMaxDegrees: CGFloat(settings.trail.bendOffsetDirectionMax),
+      arcLengthMin: CGFloat(settings.trail.arcLengthMin),
+      arcLengthMax: CGFloat(settings.trail.arcLengthMax),
+      arcGapMin: CGFloat(settings.trail.arcGapMin),
+      arcGapMax: CGFloat(settings.trail.arcGapMax))
 
     if let window {
       window.setContentSize(NSSize(width: markerCanvasSize, height: markerCanvasSize))

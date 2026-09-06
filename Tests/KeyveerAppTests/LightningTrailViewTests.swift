@@ -161,7 +161,7 @@ final class LightningTrailViewTests: XCTestCase {
           RenderedLightningBolt(
             id: 4,
             trunk: LightningStroke(points: [CGPoint(x: 20, y: 60), CGPoint(x: 180, y: 60)]),
-            arc: arc,
+            arcs: [arc],
             alpha: 1,
             glowScale: 1)
         ]),

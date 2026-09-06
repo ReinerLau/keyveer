@@ -1316,6 +1316,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(trail["bendOffsetDirectionMax"] as? Double, 90)
     XCTAssertEqual(trail["bendSpacingMin"] as? Double, 24)
     XCTAssertEqual(trail["bendSpacingMax"] as? Double, 36)
+    XCTAssertEqual(trail["arcLengthMin"] as? Double, 80)
+    XCTAssertEqual(trail["arcLengthMax"] as? Double, 180)
+    XCTAssertEqual(trail["arcGapMin"] as? Double, 24)
+    XCTAssertEqual(trail["arcGapMax"] as? Double, 72)
   }
 
   func testVisualConfigurationDefaultsAndPartialValuesAreAccepted() throws {
@@ -1359,6 +1363,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(partialDecoded.visual.trail.bendOffsetDirectionMax, 90)
     XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMin, 24)
     XCTAssertEqual(partialDecoded.visual.trail.bendSpacingMax, 36)
+    XCTAssertEqual(partialDecoded.visual.trail.arcLengthMin, 80)
+    XCTAssertEqual(partialDecoded.visual.trail.arcLengthMax, 180)
+    XCTAssertEqual(partialDecoded.visual.trail.arcGapMin, 24)
+    XCTAssertEqual(partialDecoded.visual.trail.arcGapMax, 72)
 
     var customSpacing = try configurationObject()
     customSpacing["visual"] = [
@@ -1474,6 +1482,10 @@ final class KeyveerRuntimeTests: XCTestCase {
       ("bendOffsetDistanceMax", 129.0),
       ("bendOffsetDirectionMin", -361.0),
       ("bendOffsetDirectionMax", 361.0),
+      ("arcLengthMin", 7.0),
+      ("arcLengthMax", 641.0),
+      ("arcGapMin", -1.0),
+      ("arcGapMax", 641.0),
     ] {
       var invalidBend = try configurationObject()
       invalidBend["visual"] = ["trail": [field: value]]
@@ -1522,6 +1534,32 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertTrue(reversedDirectionResponse.effects.contains(where: { effect in
       if case .configurationRejected(let reason) = effect {
         return reason.contains("bendOffsetDirectionMin")
+      }
+      return false
+    }))
+
+    var reversedArcLength = try configurationObject()
+    reversedArcLength["visual"] = [
+      "trail": ["arcLengthMin": 180.0, "arcLengthMax": 80.0]
+    ]
+    let reversedArcLengthResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedArcLength)))
+    XCTAssertTrue(reversedArcLengthResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.arcLengthMin")
+      }
+      return false
+    }))
+
+    var reversedArcGap = try configurationObject()
+    reversedArcGap["visual"] = [
+      "trail": ["arcGapMin": 72.0, "arcGapMax": 24.0]
+    ]
+    let reversedArcGapResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedArcGap)))
+    XCTAssertTrue(reversedArcGapResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.arcGapMin")
       }
       return false
     }))

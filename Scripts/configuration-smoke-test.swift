@@ -131,11 +131,19 @@ func run() -> Int32 {
       print("FAIL: generated configuration has no visual defaults.")
       return 1
     }
-    if
-      let visual = generated["visual"] as? [String: Any],
-      let trail = visual["trail"] as? [String: Any],
-      ["lengthMultiplier", "maxLength", "tailWidthScale", "headWidthScale"]
-        .contains(where: { trail[$0] != nil })
+    guard
+      let generatedVisual = generated["visual"] as? [String: Any],
+      let generatedTrail = generatedVisual["trail"] as? [String: Any],
+      generatedTrail["arcLengthMin"] as? Double == 80,
+      generatedTrail["arcLengthMax"] as? Double == 180,
+      generatedTrail["arcGapMin"] as? Double == 24,
+      generatedTrail["arcGapMax"] as? Double == 72
+    else {
+      print("FAIL: generated trail configuration has incorrect companion arc defaults.")
+      return 1
+    }
+    if ["lengthMultiplier", "maxLength", "tailWidthScale", "headWidthScale"]
+      .contains(where: { generatedTrail[$0] != nil })
     {
       print("FAIL: generated trail configuration still contains retired length/taper fields.")
       return 1
@@ -153,6 +161,10 @@ func run() -> Int32 {
     visual["marker"] = marker
     var trail = visual["trail"] as? [String: Any] ?? [:]
     trail["blurRadius"] = 24.0
+    trail["arcLengthMin"] = 90.0
+    trail["arcLengthMax"] = 160.0
+    trail["arcGapMin"] = 30.0
+    trail["arcGapMax"] = 60.0
     visual["trail"] = trail
     valid["visual"] = visual
     try writeObject(valid)

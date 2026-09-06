@@ -61,6 +61,10 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
     "bendOffsetDistanceMax": 24,
     "bendOffsetDirectionMin": -90,
     "bendOffsetDirectionMax": 90,
+    "arcLengthMin": 80,
+    "arcLengthMax": 180,
+    "arcGapMin": 24,
+    "arcGapMax": 72,
     "blurRadius": 16,
     "coreColor": "#FFFFFF",
     "outerGlowColor": "#008FEF",
@@ -84,7 +88,8 @@ For keyboard movement, releasing the final movement key triggers dissipation imm
 pointer-only movement retains the brief stationary timeout fallback.
 It then remains fixed and opaque while independently timed sections shrink and break apart in
 place for 0.45 seconds. The effect has no directional wipe, full-width branches, or flying sparks;
-it includes one continuous thin companion arc, generated as an independent route alongside the trunk.
+its thin companion arc grows in deterministic length-limited sections with random path gaps,
+while completed sections remain in place until the trunk stops.
 
 For lock-screen, sleep, permission-loss, and event-tap recovery checks, run
 `./Scripts/recovery-smoke-test.sh`. These cases require system interaction and are recorded as an

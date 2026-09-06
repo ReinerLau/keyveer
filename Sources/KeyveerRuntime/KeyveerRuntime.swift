@@ -915,6 +915,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public var bendOffsetDistanceMax: Double
   public var bendOffsetDirectionMin: Double
   public var bendOffsetDirectionMax: Double
+  public var arcLengthMin: Double
+  public var arcLengthMax: Double
+  public var arcGapMin: Double
+  public var arcGapMax: Double
   public var blurRadius: Double
   public var coreColor: String
   public var outerGlowColor: String
@@ -931,6 +935,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     bendOffsetDistanceMax: Double = 24,
     bendOffsetDirectionMin: Double = -90,
     bendOffsetDirectionMax: Double = 90,
+    arcLengthMin: Double = 80,
+    arcLengthMax: Double = 180,
+    arcGapMin: Double = 24,
+    arcGapMax: Double = 72,
     blurRadius: Double = 16,
     coreColor: String = "#FFFFFF",
     outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
@@ -943,6 +951,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     self.bendOffsetDistanceMax = bendOffsetDistanceMax
     self.bendOffsetDirectionMin = bendOffsetDirectionMin
     self.bendOffsetDirectionMax = bendOffsetDirectionMax
+    self.arcLengthMin = arcLengthMin
+    self.arcLengthMax = arcLengthMax
+    self.arcGapMin = arcGapMin
+    self.arcGapMax = arcGapMax
     self.blurRadius = blurRadius
     self.coreColor = coreColor
     self.outerGlowColor = outerGlowColor
@@ -956,6 +968,7 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     case lengthMultiplier, maxLength, coreWidth, bendSpacingMin, bendSpacingMax
     case bendOffsetDistanceMin, bendOffsetDistanceMax
     case bendOffsetDirectionMin, bendOffsetDirectionMax
+    case arcLengthMin, arcLengthMax, arcGapMin, arcGapMax
     case blurRadius, coreColor, outerGlowColor
     case outerGlowOpacity, glowStrength
   }
@@ -975,6 +988,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
         ?? -90,
       bendOffsetDirectionMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMax)
         ?? 90,
+      arcLengthMin: try container.decodeIfPresent(Double.self, forKey: .arcLengthMin) ?? 80,
+      arcLengthMax: try container.decodeIfPresent(Double.self, forKey: .arcLengthMax) ?? 180,
+      arcGapMin: try container.decodeIfPresent(Double.self, forKey: .arcGapMin) ?? 24,
+      arcGapMax: try container.decodeIfPresent(Double.self, forKey: .arcGapMax) ?? 72,
       blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
@@ -995,6 +1012,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     try container.encode(bendOffsetDistanceMax, forKey: .bendOffsetDistanceMax)
     try container.encode(bendOffsetDirectionMin, forKey: .bendOffsetDirectionMin)
     try container.encode(bendOffsetDirectionMax, forKey: .bendOffsetDirectionMax)
+    try container.encode(arcLengthMin, forKey: .arcLengthMin)
+    try container.encode(arcLengthMax, forKey: .arcLengthMax)
+    try container.encode(arcGapMin, forKey: .arcGapMin)
+    try container.encode(arcGapMax, forKey: .arcGapMax)
     try container.encode(blurRadius, forKey: .blurRadius)
     try container.encode(coreColor, forKey: .coreColor)
     try container.encode(outerGlowColor, forKey: .outerGlowColor)
@@ -1035,6 +1056,20 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       throw ConfigurationError.invalidValue(
         name: "visual.trail.bendOffsetDirectionMin",
         description: "must be less than or equal to visual.trail.bendOffsetDirectionMax")
+    }
+    try validate(arcLengthMin, named: "visual.trail.arcLengthMin", range: 8...640)
+    try validate(arcLengthMax, named: "visual.trail.arcLengthMax", range: 8...640)
+    guard arcLengthMin <= arcLengthMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.arcLengthMin",
+        description: "must be less than or equal to visual.trail.arcLengthMax")
+    }
+    try validate(arcGapMin, named: "visual.trail.arcGapMin", range: 0...640)
+    try validate(arcGapMax, named: "visual.trail.arcGapMax", range: 0...640)
+    guard arcGapMin <= arcGapMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.arcGapMin",
+        description: "must be less than or equal to visual.trail.arcGapMax")
     }
     try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
     try validateHexColor(coreColor, named: "visual.trail.coreColor")
