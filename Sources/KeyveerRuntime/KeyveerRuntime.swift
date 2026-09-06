@@ -903,40 +903,35 @@ public struct MarkerVisualSettings: Codable, Equatable, Sendable {
 }
 
 public struct TrailVisualSettings: Codable, Equatable, Sendable {
-  public var lengthMultiplier: Double
-  public var maxLength: Double
   public var coreWidth: Double
-  public var tailWidthScale: Double
-  public var headWidthScale: Double
   public var blurRadius: Double
   public var coreColor: String
   public var outerGlowColor: String
   public var outerGlowOpacity: Double
   public var glowStrength: Double
+  private var legacyLengthMultiplier: Double?
+  private var legacyMaxLength: Double?
 
   public init(
-    lengthMultiplier: Double = 1, maxLength: Double = 320,
     coreWidth: Double = 3.5,
-    tailWidthScale: Double = 0.18, headWidthScale: Double = 1.6, blurRadius: Double = 16,
+    blurRadius: Double = 16,
     coreColor: String = "#FFFFFF",
     outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
     glowStrength: Double = 1.0
   ) {
-    self.lengthMultiplier = lengthMultiplier
-    self.maxLength = maxLength
     self.coreWidth = coreWidth
-    self.tailWidthScale = tailWidthScale
-    self.headWidthScale = headWidthScale
     self.blurRadius = blurRadius
     self.coreColor = coreColor
     self.outerGlowColor = outerGlowColor
     self.outerGlowOpacity = outerGlowOpacity
     self.glowStrength = glowStrength
+    legacyLengthMultiplier = nil
+    legacyMaxLength = nil
   }
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
     case lengthMultiplier, maxLength, coreWidth
-    case tailWidthScale, headWidthScale, blurRadius, coreColor, outerGlowColor
+    case blurRadius, coreColor, outerGlowColor
     case outerGlowOpacity, glowStrength
   }
 
@@ -944,11 +939,7 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
     self.init(
-      lengthMultiplier: try container.decodeIfPresent(Double.self, forKey: .lengthMultiplier) ?? 1,
-      maxLength: try container.decodeIfPresent(Double.self, forKey: .maxLength) ?? 320,
       coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 3.5,
-      tailWidthScale: try container.decodeIfPresent(Double.self, forKey: .tailWidthScale) ?? 0.18,
-      headWidthScale: try container.decodeIfPresent(Double.self, forKey: .headWidthScale) ?? 1.6,
       blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
@@ -956,19 +947,30 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       outerGlowOpacity: try container.decodeIfPresent(Double.self, forKey: .outerGlowOpacity)
         ?? 1.0,
       glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 1.0)
+    legacyLengthMultiplier = try container.decodeIfPresent(Double.self, forKey: .lengthMultiplier)
+    legacyMaxLength = try container.decodeIfPresent(Double.self, forKey: .maxLength)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(coreWidth, forKey: .coreWidth)
+    try container.encode(blurRadius, forKey: .blurRadius)
+    try container.encode(coreColor, forKey: .coreColor)
+    try container.encode(outerGlowColor, forKey: .outerGlowColor)
+    try container.encode(outerGlowOpacity, forKey: .outerGlowOpacity)
+    try container.encode(glowStrength, forKey: .glowStrength)
   }
 
   fileprivate func validated() throws -> TrailVisualSettings {
-    try validate(lengthMultiplier, named: "visual.trail.lengthMultiplier", range: 0.25...3)
-    try validate(maxLength, named: "visual.trail.maxLength", range: 24...640)
-    try validate(coreWidth, named: "visual.trail.coreWidth", range: 0.5...12)
-    try validate(tailWidthScale, named: "visual.trail.tailWidthScale", range: 0.05...1)
-    try validate(headWidthScale, named: "visual.trail.headWidthScale", range: 0.25...3)
-    try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
-    guard headWidthScale >= tailWidthScale else {
-      throw ConfigurationError.invalidValue(
-        name: "visual.trail.headWidthScale", description: "must be at least tailWidthScale")
+    if let legacyLengthMultiplier {
+      try validate(
+        legacyLengthMultiplier, named: "visual.trail.lengthMultiplier", range: 0.25...3)
     }
+    if let legacyMaxLength {
+      try validate(legacyMaxLength, named: "visual.trail.maxLength", range: 24...640)
+    }
+    try validate(coreWidth, named: "visual.trail.coreWidth", range: 0.5...12)
+    try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
     try validateHexColor(coreColor, named: "visual.trail.coreColor")
     try validateHexColor(outerGlowColor, named: "visual.trail.outerGlowColor")
     try validate(outerGlowOpacity, named: "visual.trail.outerGlowOpacity", range: 0...1)

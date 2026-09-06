@@ -445,13 +445,12 @@ final class LightningTrailView: NSView {
 
     private struct CachedTrunkSegment {
       let path: NSBezierPath
-      let widthScale: CGFloat
+      let start: CGPoint
+      let end: CGPoint
     }
 
     private struct CachedBoltPaths {
       let trunk: [CachedTrunkSegment]
-      let tailWidthScale: Double
-      let headWidthScale: Double
     }
 
     struct DrawingState {
@@ -489,30 +488,35 @@ final class LightningTrailView: NSView {
       for bolt in drawingState.frame.bolts {
         guard let paths = pathCache[bolt.id] else { continue }
         draw(
-          paths.trunk, alpha: bolt.alpha, glowScale: bolt.glowScale,
+          paths.trunk, renderedSegments: bolt.segments,
+          alpha: bolt.alpha, glowScale: bolt.glowScale,
           visualSettings: drawingState.visualSettings)
       }
     }
 
     private func draw(
-      _ segments: [CachedTrunkSegment], alpha: CGFloat, glowScale: CGFloat,
+      _ segments: [CachedTrunkSegment], renderedSegments: [RenderedLightningSegment],
+      alpha: CGFloat, glowScale: CGFloat,
       visualSettings: TrailVisualSettings
     ) {
-      guard alpha > 0, !segments.isEmpty else { return }
+      guard alpha > 0, !segments.isEmpty, segments.count == renderedSegments.count else { return }
+      let baseWidth = CGFloat(visualSettings.coreWidth)
       strokeWithGaussianGlow(
         segments,
-        baseWidth: CGFloat(visualSettings.coreWidth),
+        renderedSegments: renderedSegments,
+        baseWidth: baseWidth,
         glowColor: color(from: visualSettings.outerGlowColor).withAlphaComponent(
           min(1, alpha * glowScale * CGFloat(visualSettings.outerGlowOpacity))),
         blurRadius: CGFloat(visualSettings.blurRadius))
       stroke(
-        segments, baseWidth: CGFloat(visualSettings.coreWidth),
+        segments, renderedSegments: renderedSegments, baseWidth: baseWidth,
         color: color(from: visualSettings.coreColor).withAlphaComponent(
           min(1, alpha * LightningPalette.whiteCoreAlpha)))
     }
 
     private func strokeWithGaussianGlow(
       _ segments: [CachedTrunkSegment],
+      renderedSegments: [RenderedLightningSegment],
       baseWidth: CGFloat,
       glowColor: NSColor,
       blurRadius: CGFloat
@@ -544,7 +548,8 @@ final class LightningTrailView: NSView {
       NSGraphicsContext.saveGraphicsState()
       NSGraphicsContext.current = bitmapGraphics
       bitmap.translateBy(x: -imageRect.origin.x, y: -imageRect.origin.y)
-      stroke(segments, baseWidth: baseWidth, color: glowColor)
+      stroke(
+        segments, renderedSegments: renderedSegments, baseWidth: baseWidth, color: glowColor)
       NSGraphicsContext.restoreGraphicsState()
 
       guard
@@ -565,11 +570,13 @@ final class LightningTrailView: NSView {
     }
 
     private func stroke(
-      _ segments: [CachedTrunkSegment], baseWidth: CGFloat, color: NSColor
+      _ segments: [CachedTrunkSegment], renderedSegments: [RenderedLightningSegment],
+      baseWidth: CGFloat, color: NSColor
     ) {
       color.setStroke()
-      for segment in segments {
-        segment.path.lineWidth = baseWidth * segment.widthScale
+      for (segment, rendered) in zip(segments, renderedSegments) {
+        guard rendered.widthScale > 0 else { continue }
+        segment.path.lineWidth = baseWidth * rendered.widthScale
         segment.path.stroke()
       }
     }
@@ -578,27 +585,29 @@ final class LightningTrailView: NSView {
       let activeIDs = Set(drawingState.frame.bolts.map(\.id))
       pathCache = pathCache.filter { activeIDs.contains($0.key) }
       for bolt in drawingState.frame.bolts {
-        if let cached = pathCache[bolt.id],
-          cached.tailWidthScale == drawingState.visualSettings.tailWidthScale,
-          cached.headWidthScale == drawingState.visualSettings.headWidthScale
+        var cachedSegments = pathCache[bolt.id]?.trunk ?? []
+        let comparableCount = min(cachedSegments.count, bolt.segments.count)
+        var sharedCount = 0
+        while
+          sharedCount < comparableCount,
+          cachedSegments[sharedCount].start == bolt.segments[sharedCount].start,
+          cachedSegments[sharedCount].end == bolt.segments[sharedCount].end
         {
-          continue
+          sharedCount += 1
         }
-        let segments = bolt.trunk.taperedSegments(
-          maximumLength: 4,
-          tailWidthScale: CGFloat(drawingState.visualSettings.tailWidthScale),
-          headWidthScale: CGFloat(drawingState.visualSettings.headWidthScale))
-        pathCache[bolt.id] = CachedBoltPaths(
-          trunk: segments.map { segment in
+        if sharedCount < cachedSegments.count {
+          cachedSegments.removeSubrange(sharedCount...)
+        }
+        for segment in bolt.segments.dropFirst(cachedSegments.count) {
             let path = NSBezierPath()
             path.move(to: segment.start)
             path.line(to: segment.end)
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
-            return CachedTrunkSegment(path: path, widthScale: segment.widthScale)
-          },
-          tailWidthScale: drawingState.visualSettings.tailWidthScale,
-          headWidthScale: drawingState.visualSettings.headWidthScale)
+            cachedSegments.append(
+              CachedTrunkSegment(path: path, start: segment.start, end: segment.end))
+        }
+        pathCache[bolt.id] = CachedBoltPaths(trunk: cachedSegments)
       }
     }
 }
@@ -677,7 +686,6 @@ private final class CursorMarkerController {
 
   func updateVisualSettings(_ settings: VisualSettings) {
     visualSettings = settings
-    lightning.updateVisualSettings(settings.trail)
 
     if let window {
       window.setContentSize(NSSize(width: markerCanvasSize, height: markerCanvasSize))

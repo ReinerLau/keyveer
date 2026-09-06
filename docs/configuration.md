@@ -54,11 +54,7 @@
       "glowStrength": 1.0
     },
     "trail": {
-      "lengthMultiplier": 1,
-      "maxLength": 320,
       "coreWidth": 3.5,
-      "tailWidthScale": 0.18,
-      "headWidthScale": 1.6,
       "blurRadius": 16,
       "coreColor": "#FFFFFF",
       "outerGlowColor": "#008FEF",
@@ -114,17 +110,17 @@
 
 ### `visual.trail`：闪电轨迹
 
-宽度沿轨迹从尾端逐渐过渡到标记端：尾端是远离当前自由模式指针标记的一端，标记端是
-靠近标记的一端。`coreWidth` 是基准白芯宽度；两端的实际宽度都以它为基准计算：
-`实际宽度 = coreWidth × 对应倍率`。因此这些倍率不是独立的 pt 数值。
+一次连续移动只形成一道完整闪电。累计移动达到 8pt 后，闪电从准确起点补画并沿实际移动
+路线持续生长；移动期间不限制最大长度，也不会删除或淡化旧段。停止约 100ms 后，主干冻结
+在原位置，各处以不同顺序收细、断裂，并在约 0.45 秒内完全移除。它不会从某一端向另一端
+擦除，也不产生分叉或飞散火花。
+
+`coreWidth` 是白芯的基准宽度。每个局部段生成时会取得固定的随机倍率，实际宽度为
+`coreWidth × 0.45...1.6`；随机范围与轨迹位置无关，生成后不会继续变化。
 
 | 字段 | 默认值 | 含义 |
 | --- | ---: | --- |
-| `lengthMultiplier` | `1` | 轨迹长度倍率 |
-| `maxLength` | `320` | 轨迹最大长度（pt） |
-| `coreWidth` | `3.5` | 白芯宽度（pt） |
-| `tailWidthScale` | `0.18` | 尾端宽度倍率；实际宽度为 `coreWidth × tailWidthScale` |
-| `headWidthScale` | `1.6` | 标记端宽度倍率；实际宽度为 `coreWidth × headWidthScale` |
+| `coreWidth` | `3.5` | 白芯基准宽度（pt）；局部实际宽度为该值的 `0.45...1.6` 倍 |
 | `blurRadius` | `16` | 轨迹外层高斯模糊半径（pt） |
 | `coreColor` / `outerGlowColor` | `#FFFFFF` / `#008FEF` | 白芯与外层辉光颜色 |
 | `outerGlowOpacity` | `1` | 外层辉光透明度（`0` 到 `1`） |
@@ -138,3 +134,7 @@
 ## 旧配置
 
 schema v1/v2 配置仍可读取并自动迁移到运行时的 v3。旧文件没有 `visual` 时，会使用本文档中的视觉默认值，不需要手动补齐。
+
+旧 schema v3 中的 `visual.trail.lengthMultiplier` 与 `visual.trail.maxLength` 仍可读取和校验，
+但不再影响轨迹。`tailWidthScale` 与 `headWidthScale` 已删除；配置中仍包含它们时，Reload 会
+将文件作为包含未知字段的无效配置拒绝。

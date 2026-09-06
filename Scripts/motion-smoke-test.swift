@@ -196,7 +196,7 @@ func run() -> Int32 {
     tapOption()
     return 1
   }
-  print("PASS: pointer movement produces a fading marker trail.")
+  print("PASS: pointer movement produces a growing lightning trail.")
 
   let base = displacement(for: [lKey])
   tapOption()

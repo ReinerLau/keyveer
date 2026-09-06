@@ -45,8 +45,8 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
 
 ```json
 "visual": {
-    "marker": {
-      "coreDiameter": 7,
+  "marker": {
+    "coreDiameter": 7,
     "glowRadius": 9,
     "coreColor": "#FFFFFF",
     "outerGlowColor": "#008FEF",
@@ -54,11 +54,7 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
     "glowStrength": 1.0
   },
   "trail": {
-    "lengthMultiplier": 1.0,
-    "maxLength": 320,
     "coreWidth": 3.5,
-    "tailWidthScale": 0.18,
-    "headWidthScale": 1.6,
     "blurRadius": 16,
     "coreColor": "#FFFFFF",
     "outerGlowColor": "#008FEF",
@@ -71,6 +67,11 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
 All visual fields are optional and use the values above when omitted. The marker and trail outer
 glows use Gaussian blur controlled by `glowRadius` and `blurRadius`. Colors use `#RRGGBB`;
 numeric limits are validated during reload.
+
+A continuous movement grows one complete lightning trunk from its exact starting point to the
+marker. The trunk has no artificial length limit and stays fully visible until movement stops.
+It then remains fixed and opaque while independently timed sections shrink and break apart in
+place for 0.45 seconds. The effect has no directional wipe, branches, or flying sparks.
 
 For lock-screen, sleep, permission-loss, and event-tap recovery checks, run
 `./Scripts/recovery-smoke-test.sh`. These cases require system interaction and are recorded as an

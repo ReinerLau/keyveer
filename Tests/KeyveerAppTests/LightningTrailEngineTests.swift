@@ -5,54 +5,41 @@ import XCTest
 @testable import KeyveerApp
 
 final class LightningTrailEngineTests: XCTestCase {
-  func testShortPrecisionMovementStillEmitsABolt() {
+  func testEightPointMovementStartsABoltFromTheExactOrigin() {
     var engine = LightningTrailEngine(seed: 1)
 
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 12, y: 0), at: 0.1)
+    engine.move(to: CGPoint(x: 8, y: 0), at: 0.1)
 
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
     XCTAssertEqual(bolt.trunk.points.first, CGPoint(x: 0, y: 0))
-    XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 12, y: 0))
+    XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 8, y: 0))
   }
 
-  func testMovementBelowTenPointsDoesNotEmit() {
+  func testMovementBelowEightPointsDoesNotStartABolt() {
     var engine = LightningTrailEngine(seed: 1)
 
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 9.9, y: 0), at: 0.1)
+    engine.move(to: CGPoint(x: 7.9, y: 0), at: 0.1)
 
     XCTAssertTrue(engine.frame(at: 0.1).isEmpty)
   }
 
-  func testHighSpeedAnchorIsLimitedToThreeHundredTwentyPoints() {
+  func testContinuousMovementKeepsWholeBoltBeyondLegacyLimits() {
     var engine = LightningTrailEngine(seed: 2)
 
-    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 500, y: 0), at: 0.1)
+    for step in 0...100 {
+      engine.move(
+        to: CGPoint(x: CGFloat(step) * 8, y: 0),
+        at: Double(step) * 0.05)
+    }
 
-    let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
-    XCTAssertEqual(bolt.trunk.points.first!.x, 180, accuracy: 0.001)
-    XCTAssertEqual(bolt.trunk.points.last!.x, 500, accuracy: 0.001)
+    let bolt = try! XCTUnwrap(engine.frame(at: 5.0).bolts.first)
+    XCTAssertEqual(bolt.trunk.points.first, CGPoint(x: 0, y: 0))
+    XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 800, y: 0))
   }
 
-  func testVisualLengthSettingsChangeOnlyNewBoltGeometry() {
-    var engine = LightningTrailEngine(seed: 2)
-    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
-    let original = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
-
-    engine.updateVisualSettings(
-      TrailVisualSettings(lengthMultiplier: 0.5, maxLength: 640))
-    let stillFrozen = try! XCTUnwrap(engine.frame(at: 0.15).bolts.first)
-    XCTAssertEqual(stillFrozen.trunk, original.trunk)
-
-    engine.move(to: CGPoint(x: 400, y: 0), at: 0.2)
-    let updated = try! XCTUnwrap(engine.frame(at: 0.2).bolts.first)
-    XCTAssertGreaterThan(updated.trunk.points.first!.x, original.trunk.points.first!.x)
-  }
-
-  func testFirstAccelerationLevelProducesALongerBolt() {
+  func testFirstVisibleBoltBackfillsTheWholeMovement() {
     var engine = LightningTrailEngine(seed: 2)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 270, y: 0), at: 0.3)
@@ -60,17 +47,6 @@ final class LightningTrailEngineTests: XCTestCase {
     let bolt = try! XCTUnwrap(engine.frame(at: 0.3).bolts.first)
     XCTAssertEqual(bolt.trunk.points.first!.x, 0, accuracy: 0.001)
     XCTAssertEqual(bolt.trunk.points.last!.x, 270, accuracy: 0.001)
-  }
-
-  func testNormalMinimumTargetSpanIsTwentyFourPoints() {
-    var engine = LightningTrailEngine(seed: 2)
-
-    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 24, y: 0), at: 0.14)
-
-    let bolt = try! XCTUnwrap(engine.frame(at: 0.14).bolts.first)
-    XCTAssertEqual(bolt.trunk.points.first!.x, 0, accuracy: 0.001)
-    XCTAssertEqual(bolt.trunk.points.last!.x, 24, accuracy: 0.001)
   }
 
   func testBoltGeometryIsDeterministicAndFrozen() {
@@ -89,6 +65,21 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(initial.trunk, sameSeed.trunk)
     XCTAssertEqual(initial.trunk, later.trunk)
     XCTAssertTrue(initial.trunk.points.dropFirst().dropLast().contains { abs($0.y) > 0.1 })
+  }
+
+  func testContinuousMovementAppendsToTheSameFrozenTrunk() {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.05)
+    let initial = try! XCTUnwrap(engine.frame(at: 0.05).bolts.first)
+
+    engine.move(to: CGPoint(x: 160, y: 40), at: 0.10)
+    let extended = try! XCTUnwrap(engine.frame(at: 0.10).bolts.first)
+
+    XCTAssertEqual(extended.id, initial.id)
+    let frozenInitial = initial.segments.filter { max($0.start.x, $0.end.x) <= 50 }
+    XCTAssertEqual(Array(extended.segments.prefix(frozenInitial.count)), frozenInitial)
+    XCTAssertEqual(extended.trunk.points.last, CGPoint(x: 160, y: 40))
   }
 
   func testBoltBendPositionsAreIrregularlySpaced() {
@@ -127,6 +118,23 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertLessThan(edgeAverage / middleAverage, 1.25)
   }
 
+  func testTrunkSegmentsKeepPositionIndependentRandomWidthsWhenTheBoltGrows() {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 200, y: 0), at: 0.05)
+    let initial = try! XCTUnwrap(engine.frame(at: 0.05).bolts.first)
+    let initialSegments = initial.segments
+
+    XCTAssertGreaterThan(initialSegments.count, 10)
+    XCTAssertTrue(initialSegments.allSatisfy { (0.45...1.6).contains($0.widthScale) })
+    XCTAssertGreaterThan(Set(initialSegments.map { Int($0.widthScale * 100) }).count, 3)
+
+    engine.move(to: CGPoint(x: 260, y: 40), at: 0.10)
+    let extended = try! XCTUnwrap(engine.frame(at: 0.10).bolts.first)
+    let frozenInitial = initialSegments.filter { max($0.start.x, $0.end.x) <= 170 }
+    XCTAssertEqual(Array(extended.segments.prefix(frozenInitial.count)), frozenInitial)
+  }
+
   func testEachGapBetweenPrimaryBendsGetsASmallRandomOffset() {
     var engine = LightningTrailEngine(seed: 42)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
@@ -134,7 +142,7 @@ final class LightningTrailEngineTests: XCTestCase {
 
     let points = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.trunk.points)
 
-    XCTAssertEqual(points.count, 19)
+    XCTAssertGreaterThan(points.count, 19)
     for index in stride(from: 1, to: points.count - 1, by: 2) {
       let offset = perpendicularDistance(
         from: points[index], toLineFrom: points[index - 1], to: points[index + 1])
@@ -154,44 +162,99 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertGreaterThan(points.map(\.y).max()!, 50)
   }
 
-  func testTaperedSegmentsConnectTailToHeadAndGrowTowardTheMarker() {
-    let stroke = LightningStroke(
-      points: [CGPoint(x: 0, y: 0), CGPoint(x: 6, y: 8), CGPoint(x: 16, y: 8)])
-
-    let segments = stroke.taperedSegments(
-      maximumLength: 4, tailWidthScale: 0.18, headWidthScale: 1.25)
-
-    XCTAssertEqual(segments.first?.start, CGPoint(x: 0, y: 0))
-    XCTAssertEqual(segments.last?.end, CGPoint(x: 16, y: 8))
-    XCTAssertLessThan(segments.first!.widthScale, 0.5)
-    XCTAssertGreaterThan(segments.last!.widthScale, 1.15)
-    for pair in zip(segments, segments.dropFirst()) {
-      XCTAssertEqual(pair.0.end, pair.1.start)
-      XCTAssertLessThan(pair.0.widthScale, pair.1.widthScale)
-    }
-  }
-
-  func testBoltHoldsThenFadesQuadratically() {
+  func testBoltDoesNotStartDissipatingUntilMovementHasStoppedForOneHundredMilliseconds() {
     var engine = LightningTrailEngine(seed: 3)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 20, y: 0), at: 0.1)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    let active = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
 
-    XCTAssertEqual(engine.frame(at: 0.15).bolts.first?.alpha, 1)
-    XCTAssertEqual(engine.frame(at: 0.275).bolts.first!.alpha, 0.25, accuracy: 0.001)
-    XCTAssertTrue(engine.frame(at: 0.4).isEmpty)
+    XCTAssertEqual(engine.frame(at: 0.199).bolts.first?.segments, active.segments)
+    XCTAssertEqual(engine.frame(at: 0.20).bolts.first?.segments, active.segments)
+    XCTAssertTrue(
+      zip(engine.frame(at: 0.30).bolts.first?.segments ?? [], active.segments)
+        .contains { $0.widthScale < $1.widthScale })
+    XCTAssertEqual(engine.frame(at: 0.30).bolts.first?.alpha, 1)
+    XCTAssertTrue(engine.frame(at: 0.65).isEmpty)
   }
 
   func testContinuousMovementKeepsOnlyTheLatestBoltAtAnyRefreshRate() {
     let atSixty = activeBoltSnapshot(refreshRate: 60)
     let atOneTwenty = activeBoltSnapshot(refreshRate: 120)
 
-    XCTAssertEqual(atSixty.count, 1)
-    XCTAssertEqual(atOneTwenty.count, 1)
-    XCTAssertEqual(atSixty.latestID, atOneTwenty.latestID)
-    XCTAssertTrue((28...30).contains(atSixty.latestID))
+    XCTAssertEqual(atSixty.id, atOneTwenty.id)
+    XCTAssertEqual(atSixty.trunk, atOneTwenty.trunk)
+    XCTAssertEqual(atSixty.segments, atOneTwenty.segments)
+    XCTAssertEqual(atSixty.trunk.points.first, CGPoint(x: 0, y: 0))
+    XCTAssertEqual(atSixty.trunk.points.last, CGPoint(x: 300, y: 0))
   }
 
-  func testNormalAndHighSpeedBoltsRemainSingleTrunks() {
+  func testNewMovementCanGrowBesideOnlyTheLatestDissipatingBolt() {
+    var engine = LightningTrailEngine(seed: 7)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    let first = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    let firstID = first.id
+    _ = engine.frame(at: 0.2)
+
+    engine.move(to: CGPoint(x: 90, y: 0), at: 0.25)
+    let overlapping = engine.frame(at: 0.25).bolts
+
+    XCTAssertEqual(overlapping.count, 2)
+    XCTAssertTrue(overlapping.contains { $0.id == firstID && $0.segments != first.segments })
+    XCTAssertTrue(overlapping.contains { $0.id != firstID })
+
+    let afterSecondStop = engine.frame(at: 0.36).bolts
+    XCTAssertEqual(afterSecondStop.count, 1)
+    XCTAssertNotEqual(afterSecondStop.first?.id, firstID)
+  }
+
+  func testStoppedBoltStaysAtItsOriginalGeometryAndBreaksWithoutFading() {
+    var engine = LightningTrailEngine(seed: 8)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    let first = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+
+    let stopped = try! XCTUnwrap(engine.frame(at: 0.35).bolts.first)
+
+    XCTAssertEqual(stopped.trunk, first.trunk)
+    XCTAssertEqual(stopped.segments.count, first.segments.count)
+    for (stoppedSegment, initialSegment) in zip(stopped.segments, first.segments) {
+      XCTAssertEqual(stoppedSegment.start, initialSegment.start)
+      XCTAssertEqual(stoppedSegment.end, initialSegment.end)
+    }
+    XCTAssertTrue(zip(stopped.segments, first.segments).contains { $0.widthScale < $1.widthScale })
+    XCTAssertEqual(stopped.alpha, first.alpha)
+  }
+
+  func testStoppedBoltDissipatesAcrossTheWholeTrunkWithDifferentSegmentWidths() {
+    var engine = LightningTrailEngine(seed: 10)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+
+    let initial = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    let later = try! XCTUnwrap(engine.frame(at: 0.45).bolts.first)
+
+    XCTAssertEqual(initial.trunk, later.trunk)
+    XCTAssertEqual(initial.alpha, later.alpha)
+    let ratios = zip(later.segments, initial.segments).map { later, initial in
+      initial.widthScale > 0 ? later.widthScale / initial.widthScale : 0
+    }
+    XCTAssertTrue(ratios.contains(0))
+    XCTAssertTrue(ratios.contains { $0 > 0 })
+    XCTAssertGreaterThan(Set(ratios.map { Int($0 * 100) }).count, 3)
+  }
+
+  func testStoppedBoltIsRemovedOnlyAfterItsLifetimeEnds() {
+    var engine = LightningTrailEngine(seed: 9)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    let firstID = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.id)
+
+    XCTAssertTrue(engine.frame(at: 0.64).bolts.contains { $0.id == firstID })
+    XCTAssertFalse(engine.frame(at: 0.65).bolts.contains { $0.id == firstID })
+  }
+
+  func testMovementSpeedDoesNotChangeBrightnessOrSplitTheTrunk() {
     var normal = LightningTrailEngine(seed: 4)
     normal.move(to: CGPoint(x: 0, y: 0), at: 0)
     normal.move(to: CGPoint(x: 64, y: 0), at: 0.128)
@@ -206,8 +269,8 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(normalBolt.trunk.points.last, CGPoint(x: 64, y: 0))
     XCTAssertEqual(highBolt.trunk.points.first, CGPoint(x: 0, y: 0))
     XCTAssertEqual(highBolt.trunk.points.last, CGPoint(x: 200, y: 0))
-    XCTAssertEqual(normalBolt.glowScale, 1.05, accuracy: 0.001)
-    XCTAssertEqual(highBolt.glowScale, 1.15, accuracy: 0.001)
+    XCTAssertEqual(normalBolt.glowScale, 1, accuracy: 0.001)
+    XCTAssertEqual(highBolt.glowScale, 1, accuracy: 0.001)
   }
 
   func testReducedMotionUsesStraightBranchlessShortLivedBolts() {
@@ -217,9 +280,15 @@ final class LightningTrailEngineTests: XCTestCase {
     engine.move(to: CGPoint(x: 20, y: 0), at: 0.1)
 
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
-    XCTAssertEqual(bolt.trunk.points, [CGPoint(x: 0, y: 0), CGPoint(x: 20, y: 0)])
-    XCTAssertEqual(engine.frame(at: 0.15).bolts.first!.alpha, 2.0 / 3.0, accuracy: 0.001)
-    XCTAssertTrue(engine.frame(at: 0.25).isEmpty)
+    XCTAssertEqual(
+      bolt.trunk.points,
+      [CGPoint(x: 0, y: 0), CGPoint(x: 18, y: 0), CGPoint(x: 20, y: 0)])
+    let shrinking = try! XCTUnwrap(engine.frame(at: 0.25).bolts.first)
+    XCTAssertEqual(shrinking.alpha, 1)
+    for (later, initial) in zip(shrinking.segments, bolt.segments) {
+      XCTAssertEqual(later.widthScale, initial.widthScale * 2.0 / 3.0, accuracy: 0.001)
+    }
+    XCTAssertTrue(engine.frame(at: 0.351).isEmpty)
   }
 
   func testClearAndAccessibilityModeChangeRemoveAllVisualState() {
@@ -237,15 +306,14 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(engine.frame(at: 0.3).isEmpty)
   }
 
-  private func activeBoltSnapshot(refreshRate: Double) -> (count: Int, latestID: UInt64) {
+  private func activeBoltSnapshot(refreshRate: Double) -> RenderedLightningBolt {
     var engine = LightningTrailEngine(seed: 7)
     let frameDuration = 1 / refreshRate
     for frame in 0...Int(refreshRate) {
       let timestamp = Double(frame) * frameDuration
       engine.move(to: CGPoint(x: timestamp * 300, y: 0), at: timestamp)
     }
-    let bolts = engine.frame(at: 1).bolts
-    return (bolts.count, bolts.last?.id ?? 0)
+    return try! XCTUnwrap(engine.frame(at: 1).bolts.first)
   }
 
   private func perpendicularDistance(

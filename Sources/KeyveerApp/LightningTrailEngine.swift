@@ -1,60 +1,56 @@
 import CoreGraphics
 import Foundation
-import KeyveerRuntime
 
 struct LightningStroke: Equatable {
   let points: [CGPoint]
-
-  func taperedSegments(
-    maximumLength: CGFloat, tailWidthScale: CGFloat, headWidthScale: CGFloat
-  ) -> [TaperedLightningSegment] {
-    guard maximumLength > 0, points.count >= 2 else { return [] }
-    let lengths = zip(points, points.dropFirst()).map(distance)
-    let totalLength = lengths.reduce(0, +)
-    guard totalLength > 0 else { return [] }
-
-    var result: [TaperedLightningSegment] = []
-    var traversed: CGFloat = 0
-    for (index, length) in lengths.enumerated() where length > 0 {
-      let start = points[index]
-      let delta = subtract(points[index + 1], start)
-      let subdivisionCount = max(1, Int(ceil(length / maximumLength)))
-      for subdivision in 0..<subdivisionCount {
-        let localStart = CGFloat(subdivision) / CGFloat(subdivisionCount)
-        let localEnd = CGFloat(subdivision + 1) / CGFloat(subdivisionCount)
-        let widthProgress = (traversed + length * (localStart + localEnd) / 2) / totalLength
-        let easedProgress = CGFloat(pow(Double(widthProgress), 0.85))
-        result.append(
-          TaperedLightningSegment(
-            start: add(start, multiply(delta, localStart)),
-            end: add(start, multiply(delta, localEnd)),
-            widthScale: tailWidthScale
-              + (headWidthScale - tailWidthScale) * easedProgress))
-      }
-      traversed += length
-    }
-    return result
-  }
 }
 
-struct TaperedLightningSegment: Equatable {
+struct RenderedLightningSegment: Equatable {
   let start: CGPoint
   let end: CGPoint
   let widthScale: CGFloat
 }
 
+struct LightningSegmentProfile: Equatable {
+  let start: CGPoint
+  let end: CGPoint
+  let baseWidthScale: CGFloat
+  let dissipationDelay: TimeInterval
+  let dissipationDuration: TimeInterval
+}
+
 struct LightningBolt: Equatable {
   let id: UInt64
+  let seed: UInt64
   let trunk: LightningStroke
+  let segments: [LightningSegmentProfile]
   let createdAt: TimeInterval
+  let stoppedAt: TimeInterval?
   let glowScale: CGFloat
 }
 
 struct RenderedLightningBolt: Equatable {
   let id: UInt64
   let trunk: LightningStroke
+  let segments: [RenderedLightningSegment]
   let alpha: CGFloat
   let glowScale: CGFloat
+
+  init(
+    id: UInt64,
+    trunk: LightningStroke,
+    segments: [RenderedLightningSegment]? = nil,
+    alpha: CGFloat,
+    glowScale: CGFloat
+  ) {
+    self.id = id
+    self.trunk = trunk
+    self.segments = segments ?? zip(trunk.points, trunk.points.dropFirst()).map { start, end in
+      RenderedLightningSegment(start: start, end: end, widthScale: 1)
+    }
+    self.alpha = alpha
+    self.glowScale = glowScale
+  }
 }
 
 struct LightningTrailFrame: Equatable {
@@ -67,7 +63,6 @@ struct LightningTrailFrame: Equatable {
 struct LightningTrailEngine {
   private struct Sample: Equatable {
     let point: CGPoint
-    let timestamp: TimeInterval
   }
 
   private struct SplitMix64 {
@@ -94,36 +89,22 @@ struct LightningTrailEngine {
     }
   }
 
-  private static let standardEmissionInterval: TimeInterval = 1.0 / 30.0
-  private static let reducedMotionEmissionInterval: TimeInterval = 1.0 / 15.0
-  private static let standardLifetime: TimeInterval = 0.30
+  private static let standardLifetime: TimeInterval = 0.45
   private static let reducedMotionLifetime: TimeInterval = 0.15
-  private static let fullBrightnessDuration: TimeInterval = 0.05
-  private static let speedWindow: TimeInterval = 0.10
-  private static let tailLookback: TimeInterval = 0.36
-  private static let minimumSpan: CGFloat = 10
-  private static let normalMinimumSpan: CGFloat = 24
-  private static let highSpeed: CGFloat = 900
+  private static let stopDelay: TimeInterval = 0.10
+  private static let minimumSpan: CGFloat = 8
+  private static let growthSpacing: CGFloat = 18
 
   private var samples: [Sample] = []
   private var bolts: [LightningBolt] = []
   private var random: SplitMix64
-  private var visualSettings: TrailVisualSettings
-  private var lastEmissionTime: TimeInterval?
-  private var lastEmittedPoint: CGPoint?
+  private var lastMovementTime: TimeInterval?
+  private var lastKnownPoint: CGPoint?
   private var nextBoltID: UInt64 = 0
   private(set) var reduceMotion = false
 
-  init(
-    seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max),
-    visualSettings: TrailVisualSettings = TrailVisualSettings()
-  ) {
+  init(seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max)) {
     random = SplitMix64(seed: seed)
-    self.visualSettings = visualSettings
-  }
-
-  mutating func updateVisualSettings(_ settings: TrailVisualSettings) {
-    visualSettings = settings
   }
 
   mutating func setReduceMotion(_ enabled: Bool) {
@@ -135,15 +116,19 @@ struct LightningTrailEngine {
   mutating func clear() {
     samples.removeAll(keepingCapacity: true)
     bolts.removeAll(keepingCapacity: true)
-    lastEmissionTime = nil
-    lastEmittedPoint = nil
+    lastMovementTime = nil
+    lastKnownPoint = nil
   }
 
   mutating func move(to point: CGPoint, at timestamp: TimeInterval) {
     prune(at: timestamp)
-    guard samples.last?.point != point else { return }
-    samples.append(Sample(point: point, timestamp: timestamp))
-    trimSamples(at: timestamp)
+    guard lastKnownPoint != point else { return }
+    if samples.isEmpty, let lastKnownPoint {
+      samples.append(Sample(point: lastKnownPoint))
+    }
+    samples.append(Sample(point: point))
+    lastKnownPoint = point
+    lastMovementTime = timestamp
     emitIfReady(at: timestamp)
   }
 
@@ -153,86 +138,118 @@ struct LightningTrailEngine {
       RenderedLightningBolt(
         id: bolt.id,
         trunk: bolt.trunk,
-        alpha: boltAlpha(for: bolt, at: timestamp),
+        segments: renderedSegments(for: bolt, at: timestamp),
+        alpha: 1,
         glowScale: bolt.glowScale)
     }
     return LightningTrailFrame(bolts: renderedBolts)
   }
 
   private mutating func emitIfReady(at timestamp: TimeInterval) {
-    guard let current = samples.last else { return }
-    let interval = reduceMotion
-      ? Self.reducedMotionEmissionInterval : Self.standardEmissionInterval
-    if let lastEmissionTime, timestamp - lastEmissionTime + 0.000_001 < interval { return }
-    if let lastEmittedPoint, lastEmittedPoint == current.point { return }
-
-    let speed = estimatedSpeed(at: timestamp)
-    let accelerationProgress = min(1, max(0, (speed - 600) / (Self.highSpeed - 600)))
-    let spanFactor = 0.18 + accelerationProgress * 0.12
-    let targetSpan = min(
-      CGFloat(visualSettings.maxLength),
-      max(Self.normalMinimumSpan, speed * spanFactor * CGFloat(visualSettings.lengthMultiplier)))
-    guard
-      let centerline = tailPath(
-        for: current.point, targetSpan: targetSpan, at: timestamp)
-    else { return }
+    guard samples.last != nil else { return }
+    let centerline = samples.map(\.point)
     let span = polylineLength(centerline)
     guard span >= Self.minimumSpan else { return }
 
-    let bolt = makeBolt(along: centerline, speed: speed, at: timestamp)
-    bolts = [bolt]
-
-    lastEmissionTime = timestamp
-    lastEmittedPoint = current.point
+    let activeIndex = bolts.firstIndex(where: { $0.stoppedAt == nil })
+    let boltID: UInt64
+    let boltSeed: UInt64
+    let createdAt: TimeInterval
+    if let activeIndex {
+      boltID = bolts[activeIndex].id
+      boltSeed = bolts[activeIndex].seed
+      createdAt = bolts[activeIndex].createdAt
+    } else {
+      boltID = nextBoltID
+      nextBoltID &+= 1
+      boltSeed = random.next()
+      createdAt = timestamp
+    }
+    let generated = makeBolt(
+      along: centerline, id: boltID, seed: boltSeed, createdAt: createdAt)
+    if let activeIndex {
+      bolts[activeIndex] = generated
+    } else {
+      bolts.append(generated)
+    }
   }
 
-  private mutating func makeBolt(
-    along centerline: [CGPoint], speed: CGFloat, at timestamp: TimeInterval
+  private func makeBolt(
+    along centerline: [CGPoint], id: UInt64, seed: UInt64, createdAt: TimeInterval
   ) -> LightningBolt {
-    let boltID = nextBoltID
-    nextBoltID &+= 1
-    let anchor = centerline.first!
-    let head = centerline.last!
+    let sampledCenterline = resampledPath(centerline, spacing: Self.growthSpacing)
+    let anchor = sampledCenterline.first!
+    let head = sampledCenterline.last!
+    var profileRandom = SplitMix64(seed: seed ^ 0xA24B_AED4_963E_E407)
     if reduceMotion {
       return LightningBolt(
-        id: boltID, trunk: LightningStroke(points: [anchor, head]),
-        createdAt: timestamp, glowScale: 1)
+        id: id, seed: seed, trunk: LightningStroke(points: sampledCenterline),
+        segments: makeSegmentProfiles(
+          points: sampledCenterline, randomWidths: false, random: &profileRandom),
+        createdAt: createdAt, stoppedAt: nil, glowScale: 1)
     }
 
-    let span = polylineLength(centerline)
-    let segmentCount = min(9, max(3, Int(ceil(span / 18))))
-    let amplitude = min(24, max(6, span * 0.18))
-    var segmentWeights: [CGFloat] = []
-    segmentWeights.reserveCapacity(segmentCount)
-    for _ in 0..<segmentCount {
-      segmentWeights.append(random.value(in: 0.55...1.45))
-    }
-    let totalWeight = segmentWeights.reduce(0, +)
+    var primaryRandom = SplitMix64(seed: seed ^ 0x9E37_79B9_7F4A_7C15)
+    var detailRandom = SplitMix64(seed: seed ^ 0xD1B5_4A32_D192_ED03)
     var primaryBendPoints = [anchor]
-    var accumulatedWeight: CGFloat = 0
-    for index in 1..<segmentCount {
-      accumulatedWeight += segmentWeights[index - 1]
-      let progress = accumulatedWeight / totalWeight
-      let (center, tangent) = pointAndTangent(along: centerline, progress: progress)
+    for index in 1..<(sampledCenterline.count - 1) {
+      let center = sampledCenterline[index]
+      let tangent = normalized(
+        subtract(sampledCenterline[index + 1], sampledCenterline[index - 1]))
       let normal = CGPoint(x: -tangent.y, y: tangent.x)
-      let direction: CGFloat = random.unit() < 0.5 ? -1 : 1
-      let offset = direction * amplitude * random.value(in: 0.25...1)
+      let direction: CGFloat = primaryRandom.unit() < 0.5 ? -1 : 1
+      let offset = direction * primaryRandom.value(in: 6...24)
       primaryBendPoints.append(add(center, multiply(normal, offset)))
     }
     primaryBendPoints.append(head)
     let trunkPoints = addInterBendOffsets(
-      to: primaryBendPoints,
-      amplitude: min(5, max(2, amplitude * 0.16)))
+      to: primaryBendPoints, random: &detailRandom)
     let trunk = LightningStroke(points: trunkPoints)
 
-    let speedProgress = min(1, max(0, (speed - 300) / (Self.highSpeed - 300)))
     return LightningBolt(
-      id: boltID, trunk: trunk, createdAt: timestamp,
-      glowScale: 1 + speedProgress * 0.15)
+      id: id, seed: seed, trunk: trunk,
+      segments: makeSegmentProfiles(
+        points: trunkPoints, randomWidths: true, random: &profileRandom),
+      createdAt: createdAt,
+      stoppedAt: nil, glowScale: 1)
   }
 
-  private mutating func addInterBendOffsets(
-    to points: [CGPoint], amplitude: CGFloat
+  private func makeSegmentProfiles(
+    points: [CGPoint], randomWidths: Bool, random: inout SplitMix64
+  ) -> [LightningSegmentProfile] {
+    guard points.count >= 2 else { return [] }
+    let vertexWidths = points.map { _ in
+      randomWidths ? random.value(in: 0.45...1.6) : 1
+    }
+    var profiles: [LightningSegmentProfile] = []
+    for index in 0..<(points.count - 1) {
+      let start = points[index]
+      let end = points[index + 1]
+      let length = distance(start, end)
+      guard length > 0 else { continue }
+      let count = max(1, Int(ceil(length / 4)))
+      for subdivision in 0..<count {
+        let startProgress = CGFloat(subdivision) / CGFloat(count)
+        let endProgress = CGFloat(subdivision + 1) / CGFloat(count)
+        let midpointProgress = (startProgress + endProgress) / 2
+        let baseWidth = vertexWidths[index]
+          + (vertexWidths[index + 1] - vertexWidths[index]) * midpointProgress
+        let delay = randomWidths ? TimeInterval(random.value(in: 0...0.10)) : 0
+        let duration = randomWidths ? TimeInterval(random.value(in: 0.20...0.35)) : 0.15
+        profiles.append(
+          LightningSegmentProfile(
+            start: add(start, multiply(subtract(end, start), startProgress)),
+            end: add(start, multiply(subtract(end, start), endProgress)),
+            baseWidthScale: baseWidth,
+            dissipationDelay: delay,
+            dissipationDuration: duration))
+      }
+    }
+    return profiles
+  }
+
+  private func addInterBendOffsets(
+    to points: [CGPoint], random: inout SplitMix64
   ) -> [CGPoint] {
     guard points.count >= 2 else { return points }
 
@@ -244,7 +261,7 @@ struct LightningTrailEngine {
       let normal = CGPoint(x: -tangent.y, y: tangent.x)
       let progress = random.value(in: 0.38...0.62)
       let direction: CGFloat = random.unit() < 0.5 ? -1 : 1
-      let offset = direction * amplitude * random.value(in: 0.45...1)
+      let offset = direction * random.value(in: 2...5)
       let center = add(start, multiply(delta, progress))
       detailedPoints.append(add(center, multiply(normal, offset)))
       detailedPoints.append(end)
@@ -252,86 +269,71 @@ struct LightningTrailEngine {
     return detailedPoints
   }
 
-  private func estimatedSpeed(at timestamp: TimeInterval) -> CGFloat {
-    guard samples.count >= 2 else { return 0 }
-    let cutoff = timestamp - Self.speedWindow
-    var traveled: CGFloat = 0
-    var measuredDuration: TimeInterval = 0
-    for index in 1..<samples.count {
-      let older = samples[index - 1]
-      let newer = samples[index]
-      guard newer.timestamp > cutoff, newer.timestamp > older.timestamp else { continue }
-      let startTime = max(cutoff, older.timestamp)
-      let startProgress = CGFloat((startTime - older.timestamp) / (newer.timestamp - older.timestamp))
-      let startPoint = add(
-        older.point, multiply(subtract(newer.point, older.point), startProgress))
-      traveled += distance(startPoint, newer.point)
-      measuredDuration += newer.timestamp - startTime
-    }
-    return measuredDuration > 0 ? traveled / CGFloat(measuredDuration) : 0
-  }
-
-  private func tailPath(
-    for head: CGPoint, targetSpan: CGFloat, at timestamp: TimeInterval
-  ) -> [CGPoint]? {
-    guard samples.count >= 2 else { return nil }
-    let cutoff = timestamp - Self.tailLookback
-    var reversedPath = [head]
-    var remaining = targetSpan
-    for index in stride(from: samples.count - 1, through: 1, by: -1) {
-      let newerSample = samples[index]
-      let olderSample = samples[index - 1]
-      guard newerSample.timestamp > cutoff, newerSample.timestamp > olderSample.timestamp else {
-        continue
-      }
-      let older: CGPoint
-      if olderSample.timestamp < cutoff {
-        let progress = CGFloat(
-          (cutoff - olderSample.timestamp) / (newerSample.timestamp - olderSample.timestamp))
-        older = add(
-          olderSample.point,
-          multiply(subtract(newerSample.point, olderSample.point), progress))
-      } else {
-        older = olderSample.point
-      }
-      let newer = newerSample.point
-      let segmentLength = distance(newer, older)
-      guard segmentLength > 0 else { continue }
-      if segmentLength >= remaining {
-        let anchor = add(newer, multiply(subtract(older, newer), remaining / segmentLength))
-        if reversedPath.last != anchor { reversedPath.append(anchor) }
-        return Array(reversedPath.reversed())
-      }
-      if reversedPath.last != older { reversedPath.append(older) }
-      remaining -= segmentLength
-      if olderSample.timestamp <= cutoff { break }
-    }
-    return reversedPath.count >= 2 ? Array(reversedPath.reversed()) : nil
-  }
-
   private mutating func prune(at timestamp: TimeInterval) {
+    transitionToDissipationIfNeeded(at: timestamp)
     let boltLifetime = reduceMotion ? Self.reducedMotionLifetime : Self.standardLifetime
-    bolts.removeAll { timestamp - $0.createdAt >= boltLifetime }
-    trimSamples(at: timestamp)
-  }
-
-  private mutating func trimSamples(at timestamp: TimeInterval) {
-    let cutoff = timestamp - Self.tailLookback
-    while samples.count > 2, samples[1].timestamp < cutoff {
-      samples.removeFirst()
+    bolts.removeAll { bolt in
+      guard let stoppedAt = bolt.stoppedAt else { return false }
+      return timestamp - stoppedAt >= boltLifetime
     }
   }
 
-  private func boltAlpha(for bolt: LightningBolt, at timestamp: TimeInterval) -> CGFloat {
-    let age = max(0, timestamp - bolt.createdAt)
+  private mutating func transitionToDissipationIfNeeded(at timestamp: TimeInterval) {
+    guard
+      let lastMovementTime,
+      timestamp - lastMovementTime >= Self.stopDelay,
+      let activeIndex = bolts.firstIndex(where: { $0.stoppedAt == nil })
+    else {
+      if
+        let lastMovementTime,
+        timestamp - lastMovementTime >= Self.stopDelay,
+        bolts.allSatisfy({ $0.stoppedAt != nil }),
+        let last = samples.last
+      {
+        samples = [last]
+      }
+      return
+    }
+    let active = bolts[activeIndex]
+    let stopped = LightningBolt(
+      id: active.id,
+      seed: active.seed,
+      trunk: active.trunk,
+      segments: active.segments,
+      createdAt: active.createdAt,
+      stoppedAt: lastMovementTime + Self.stopDelay,
+      glowScale: active.glowScale)
+    bolts = [stopped]
+    if let last = samples.last { samples = [last] }
+  }
+
+  private func renderedSegments(
+    for bolt: LightningBolt, at timestamp: TimeInterval
+  ) -> [RenderedLightningSegment] {
+    bolt.segments.map { segment in
+      RenderedLightningSegment(
+        start: segment.start,
+        end: segment.end,
+        widthScale: segment.baseWidthScale * segmentDissipationScale(
+          for: segment, bolt: bolt, at: timestamp))
+    }
+  }
+
+  private func segmentDissipationScale(
+    for segment: LightningSegmentProfile,
+    bolt: LightningBolt,
+    at timestamp: TimeInterval
+  ) -> CGFloat {
+    guard let stoppedAt = bolt.stoppedAt else { return 1 }
+    let age = max(0, timestamp - stoppedAt)
     if reduceMotion {
-      return CGFloat(max(0, 1 - age / Self.reducedMotionLifetime))
+      return CGFloat(min(1, max(0, 1 - age / Self.reducedMotionLifetime)))
     }
-    if age <= Self.fullBrightnessDuration { return 1 }
-    let fadeDuration = Self.standardLifetime - Self.fullBrightnessDuration
-    let remaining = max(0, 1 - (age - Self.fullBrightnessDuration) / fadeDuration)
-    return CGFloat(remaining * remaining)
+    guard age > segment.dissipationDelay else { return 1 }
+    let progress = min(1, max(0, (age - segment.dissipationDelay) / segment.dissipationDuration))
+    return CGFloat(pow(1 - progress, 2))
   }
+
 }
 
 private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
@@ -342,22 +344,38 @@ private func polylineLength(_ points: [CGPoint]) -> CGFloat {
   zip(points, points.dropFirst()).map(distance).reduce(0, +)
 }
 
-private func pointAndTangent(
-  along points: [CGPoint], progress: CGFloat
-) -> (point: CGPoint, tangent: CGPoint) {
-  let lengths = zip(points, points.dropFirst()).map(distance)
-  var remaining = polylineLength(points) * min(1, max(0, progress))
-  for (index, segmentLength) in lengths.enumerated() where segmentLength > 0 {
-    let delta = subtract(points[index + 1], points[index])
-    if remaining <= segmentLength {
-      return (
-        add(points[index], multiply(delta, remaining / segmentLength)),
-        normalized(delta))
+private func resampledPath(_ points: [CGPoint], spacing: CGFloat) -> [CGPoint] {
+  guard let first = points.first, spacing > 0 else { return points }
+  var result = [quantized(first)]
+  var distanceUntilNext = spacing
+
+  for (rawStart, rawEnd) in zip(points, points.dropFirst()) {
+    var cursor = rawStart
+    var remainingLength = distance(cursor, rawEnd)
+    guard remainingLength > 0 else { continue }
+    while remainingLength + 0.000_001 >= distanceUntilNext {
+      let progress = distanceUntilNext / remainingLength
+      cursor = add(cursor, multiply(subtract(rawEnd, cursor), progress))
+      let sampled = quantized(cursor)
+      if result.last != sampled { result.append(sampled) }
+      remainingLength = distance(cursor, rawEnd)
+      distanceUntilNext = spacing
     }
-    remaining -= segmentLength
+    distanceUntilNext -= remainingLength
   }
-  let fallback = subtract(points.last!, points[points.count - 2])
-  return (points.last!, normalized(fallback))
+
+  if let last = points.last {
+    let endpoint = quantized(last)
+    if result.last != endpoint { result.append(endpoint) }
+  }
+  return result
+}
+
+private func quantized(_ point: CGPoint) -> CGPoint {
+  let scale: CGFloat = 1024
+  return CGPoint(
+    x: (point.x * scale).rounded() / scale,
+    y: (point.y * scale).rounded() / scale)
 }
 
 private func add(_ lhs: CGPoint, _ rhs: CGPoint) -> CGPoint {

@@ -131,6 +131,15 @@ func run() -> Int32 {
       print("FAIL: generated configuration has no visual defaults.")
       return 1
     }
+    if
+      let visual = generated["visual"] as? [String: Any],
+      let trail = visual["trail"] as? [String: Any],
+      ["lengthMultiplier", "maxLength", "tailWidthScale", "headWidthScale"]
+        .contains(where: { trail[$0] != nil })
+    {
+      print("FAIL: generated trail configuration still contains retired length/taper fields.")
+      return 1
+    }
     print("PASS: first launch generated config.json with schemaVersion 3.")
     Thread.sleep(forTimeInterval: 1)
 

@@ -1288,6 +1288,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertNil(marker["innerGlowColor"])
     XCTAssertNil(trail["innerGlowColor"])
     XCTAssertNil(trail["innerGlowWidth"])
+    XCTAssertNil(trail["lengthMultiplier"])
+    XCTAssertNil(trail["maxLength"])
+    XCTAssertNil(trail["tailWidthScale"])
+    XCTAssertNil(trail["headWidthScale"])
   }
 
   func testVisualConfigurationDefaultsAndPartialValuesAreAccepted() throws {
@@ -1297,7 +1301,6 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(defaults.marker.glowRadius, 9)
     XCTAssertEqual(defaults.marker.outerGlowOpacity, 0.60)
     XCTAssertEqual(defaults.marker.glowStrength, 1.0)
-    XCTAssertEqual(defaults.trail.maxLength, 320)
     XCTAssertEqual(defaults.trail.outerGlowOpacity, 1.0)
     XCTAssertEqual(defaults.trail.glowStrength, 1.0)
 
@@ -1318,7 +1321,14 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(decoded.visual.trail.blurRadius, 24)
     XCTAssertEqual(decoded.visual.trail.outerGlowOpacity, 0.35)
     XCTAssertEqual(decoded.visual.trail.glowStrength, 1.5)
-    XCTAssertEqual(decoded.visual.trail.maxLength, 320)
+
+    var legacyLengthFields = try configurationObject()
+    legacyLengthFields["visual"] = [
+      "trail": ["lengthMultiplier": 2.0, "maxLength": 640.0]
+    ]
+    let legacyLengthResponse = KeyveerRuntime(permissions: .allGranted).handle(
+      .configuration(try JSONSerialization.data(withJSONObject: legacyLengthFields)))
+    XCTAssertTrue(legacyLengthResponse.effects.contains(.configurationAccepted))
 
     var legacyV3 = try configurationObject()
     legacyV3.removeValue(forKey: "visual")
@@ -1363,6 +1373,19 @@ final class KeyveerRuntimeTests: XCTestCase {
       }
       return false
     }))
+
+    for retiredField in ["tailWidthScale", "headWidthScale"] {
+      var retired = try configurationObject()
+      retired["visual"] = ["trail": [retiredField: 1.0]]
+      let response = runtime.handle(
+        .configuration(try JSONSerialization.data(withJSONObject: retired)))
+      XCTAssertTrue(response.effects.contains(where: { effect in
+        if case .configurationRejected(let reason) = effect {
+          return reason.contains("unknown field") && reason.contains(retiredField)
+        }
+        return false
+      }))
+    }
 
     var invalidOpacity = try configurationObject()
     invalidOpacity["visual"] = ["marker": ["outerGlowOpacity": 1.1]]

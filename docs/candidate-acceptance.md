@@ -61,10 +61,10 @@ Record a check only after observing the result in the real app:
 - [ ] Return, keypad Enter, Delete, Forward Delete, Tab, Escape, arrows, Home, End, Page Up/Down, function keys, and media keys pass through; Shift, Caps Lock, right Option, and Fn do not bypass character protection.
 - [ ] Command/Control shortcuts pass through completely, and a key's down/repeat/up decision remains paired across entry, Left Option exit, Left Option release, permission loss, lock, sleep, and event-tap recovery.
 - [ ] The blue free-mode pointer marker is visible across applications at the lower-right of the native pointer, tracks physical and keyboard movement within one display refresh, and does not change for clicks, drags, scrolling, precision, or speed.
-- [ ] Pointer movement produces one white-core, pure-blue-glow lightning bolt with a frozen trunk whose bend spacing and offsets are irregular across its full length; it is thickest at the marker and tapers toward its tail, with no branches or sparks, then fades quickly after movement stops.
-- [ ] Holding a movement acceleration key visibly lengthens the lightning trunk beyond its normal-speed span without creating additional bolts.
-- [ ] Curved pointer movement bends the lightning's overall centerline through the recent motion path while preserving irregular lightning bends and fixed endpoints.
-- [ ] With Reduce Motion enabled, pointer movement produces only a short straight white-blue light that fades without jagged geometry or speed-driven brightening.
+- [ ] One continuous pointer movement grows one white-core, pure-blue-glow lightning trunk from its exact origin to the marker after the first 8pt; the whole trunk remains visible without a length cap, branches, or sparks.
+- [ ] Straight, curved, reversing, and closed-loop movement extend the same trunk along the complete motion route; bend positions, offsets, and 0.45–1.6× core widths are irregular, position-independent, and frozen once committed.
+- [ ] After 100ms without position change, the opaque trunk freezes in global coordinates and sections across its whole length shrink and disconnect in place for 0.45s, with no directional wipe or flying fragments.
+- [ ] With Reduce Motion enabled, the complete motion route has no random jagged geometry; after stopping, the whole trunk uniformly shrinks in place for 0.15s without opacity fading.
 - [ ] The native pointer remains visible, while the marker is removed immediately on normal exit and every safety exit; if marker presentation is unavailable, free mode continues to work.
 - [ ] A precision key, each fast key, and stacked fast keys produce the expected ordered speeds; at both 60 Hz and 120 Hz, equal movement and scroll hold times produce approximately equal distances.
 - [ ] Movement crosses a reachable multi-display boundary and respects non-standard/negative display coordinates and display gaps.
