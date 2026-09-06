@@ -215,12 +215,8 @@ struct LightningTrailEngine {
     var primaryBendPoints = [anchor]
     for index in 1..<(sampledCenterline.count - 1) {
       let center = sampledCenterline[index]
-      let tangent = normalized(
-        subtract(sampledCenterline[index + 1], sampledCenterline[index - 1]))
-      let normal = CGPoint(x: -tangent.y, y: tangent.x)
-      let direction: CGFloat = primaryRandom.unit() < 0.5 ? -1 : 1
-      let offset = direction * primaryRandom.value(in: 6...24)
-      primaryBendPoints.append(add(center, multiply(normal, offset)))
+      let offset = randomOffset(in: 6...24, random: &primaryRandom)
+      primaryBendPoints.append(add(center, offset))
     }
     primaryBendPoints.append(head)
     let trunkPoints = addInterBendOffsets(
@@ -278,13 +274,9 @@ struct LightningTrailEngine {
     detailedPoints.reserveCapacity(points.count * 2 - 1)
     for (start, end) in zip(points, points.dropFirst()) {
       let delta = subtract(end, start)
-      let tangent = normalized(delta)
-      let normal = CGPoint(x: -tangent.y, y: tangent.x)
       let progress = random.value(in: 0.38...0.62)
-      let direction: CGFloat = random.unit() < 0.5 ? -1 : 1
-      let offset = direction * random.value(in: 2...5)
       let center = add(start, multiply(delta, progress))
-      detailedPoints.append(add(center, multiply(normal, offset)))
+      detailedPoints.append(add(center, randomOffset(in: 2...5, random: &random)))
       detailedPoints.append(end)
     }
     return detailedPoints
@@ -359,6 +351,14 @@ struct LightningTrailEngine {
     return CGFloat(pow(1 - progress, 2))
   }
 
+  private func randomOffset(
+    in radiusRange: ClosedRange<CGFloat>, random: inout SplitMix64
+  ) -> CGPoint {
+    let angle = random.value(in: 0...(2 * .pi))
+    let radius = random.value(in: radiusRange)
+    return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+  }
+
 }
 
 private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
@@ -413,9 +413,4 @@ private func subtract(_ lhs: CGPoint, _ rhs: CGPoint) -> CGPoint {
 
 private func multiply(_ point: CGPoint, _ scalar: CGFloat) -> CGPoint {
   CGPoint(x: point.x * scalar, y: point.y * scalar)
-}
-
-private func normalized(_ point: CGPoint) -> CGPoint {
-  let length = hypot(point.x, point.y)
-  return length > 0 ? multiply(point, 1 / length) : .zero
 }

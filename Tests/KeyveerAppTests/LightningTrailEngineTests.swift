@@ -93,29 +93,42 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertGreaterThan(gaps.max()! - gaps.min()!, 2)
   }
 
-  func testBendOffsetsUseTheSameDistributionAcrossTheWholeTrunk() {
-    var edgeOffsets: [CGFloat] = []
-    var middleOffsets: [CGFloat] = []
+  func testPrimaryBendOffsetsArePositionIndependentAndWithinGlobalRange() {
     for seed in 0..<200 {
       var engine = LightningTrailEngine(seed: UInt64(seed))
       engine.move(to: CGPoint(x: 0, y: 0), at: 0)
       engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
 
       let points = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.trunk.points)
-      let primaryBendOffsets = points.enumerated().compactMap { index, point in
-        index > 0 && index < points.count - 1 && index.isMultiple(of: 2)
-          ? abs(point.y) : nil
+      for index in stride(from: 2, to: points.count - 1, by: 2) {
+        let expectedCenter = CGPoint(x: CGFloat(index / 2) * 18, y: 0)
+        let offset = euclideanDistance(points[index], expectedCenter)
+        XCTAssertGreaterThanOrEqual(offset, 6)
+        XCTAssertLessThanOrEqual(offset, 24)
       }
-      edgeOffsets.append(contentsOf: [primaryBendOffsets.first!, primaryBendOffsets.last!])
-      let middle = primaryBendOffsets.count / 2
-      middleOffsets.append(
-        contentsOf: [primaryBendOffsets[middle - 1], primaryBendOffsets[middle]])
+    }
+  }
+
+  func testPrimaryBendOffsetsUseRandomTwoDimensionalDirections() {
+    var foundTangentialOffset = false
+
+    for seed in 0..<200 {
+      var engine = LightningTrailEngine(seed: UInt64(seed))
+      engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+      engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
+
+      let points = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.trunk.points)
+      for index in stride(from: 2, to: points.count - 1, by: 2) {
+        let expectedCenterX = CGFloat(index / 2) * 18
+        if abs(points[index].x - expectedCenterX) > 0.5 {
+          foundTangentialOffset = true
+          break
+        }
+      }
+      if foundTangentialOffset { break }
     }
 
-    let edgeAverage = edgeOffsets.reduce(0, +) / CGFloat(edgeOffsets.count)
-    let middleAverage = middleOffsets.reduce(0, +) / CGFloat(middleOffsets.count)
-    XCTAssertGreaterThan(edgeAverage / middleAverage, 0.75)
-    XCTAssertLessThan(edgeAverage / middleAverage, 1.25)
+    XCTAssertTrue(foundTangentialOffset)
   }
 
   func testTrunkSegmentsKeepPositionIndependentRandomWidthsWhenTheBoltGrows() {
@@ -135,20 +148,25 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(Array(extended.segments.prefix(frozenInitial.count)), frozenInitial)
   }
 
-  func testEachGapBetweenPrimaryBendsGetsASmallRandomOffset() {
-    var engine = LightningTrailEngine(seed: 42)
-    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
-    engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
+  func testInterBendOffsetsUseTheSameGlobalTwoDimensionalDistribution() {
+    var foundNearTangentOffset = false
 
-    let points = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.trunk.points)
+    for seed in 0..<200 {
+      var engine = LightningTrailEngine(seed: UInt64(seed))
+      engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+      engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
 
-    XCTAssertGreaterThan(points.count, 19)
-    for index in stride(from: 1, to: points.count - 1, by: 2) {
-      let offset = perpendicularDistance(
-        from: points[index], toLineFrom: points[index - 1], to: points[index + 1])
-      XCTAssertGreaterThan(offset, 1)
-      XCTAssertLessThanOrEqual(offset, 5)
+      let points = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.trunk.points)
+      XCTAssertGreaterThan(points.count, 19)
+      for index in stride(from: 1, to: points.count - 1, by: 2) {
+        let offset = perpendicularDistance(
+          from: points[index], toLineFrom: points[index - 1], to: points[index + 1])
+        XCTAssertLessThanOrEqual(offset, 5)
+        if offset < 1 { foundNearTangentOffset = true }
+      }
     }
+
+    XCTAssertTrue(foundNearTangentOffset)
   }
 
   func testCurvedMovementHistoryBendsTheBoltAroundTheTurn() {
@@ -349,5 +367,9 @@ final class LightningTrailEngineTests: XCTestCase {
     let delta = CGPoint(x: end.x - start.x, y: end.y - start.y)
     let fromStart = CGPoint(x: point.x - start.x, y: point.y - start.y)
     return abs(delta.x * fromStart.y - delta.y * fromStart.x) / hypot(delta.x, delta.y)
+  }
+
+  private func euclideanDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+    hypot(lhs.x - rhs.x, lhs.y - rhs.y)
   }
 }
