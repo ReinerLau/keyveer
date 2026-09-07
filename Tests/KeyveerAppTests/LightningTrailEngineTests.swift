@@ -43,7 +43,9 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).arcs.isEmpty)
 
     engine.setMainTrunkEnabled(true)
-    XCTAssertTrue(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
+    let resumedFrame = engine.frame(at: 0.2)
+    XCTAssertFalse(try XCTUnwrap(resumedFrame.bolts.first).trunkVisible)
+    XCTAssertTrue(try XCTUnwrap(resumedFrame.bolts.last).trunkVisible)
   }
 
   func testTrunkFlickerIsDeterministicAndLastsOneOrTwoDisplayFrames() {
@@ -771,6 +773,18 @@ final class LightningTrailEngineTests: XCTestCase {
 
     XCTAssertEqual(stopped.trunk, active.trunk)
     XCTAssertTrue(zip(stopped.segments, active.segments).contains { $0.widthScale < $1.widthScale })
+  }
+
+  func testStoppedHiddenTrunkDoesNotReappearWhenVisibilityChangesLater() throws {
+    var engine = LightningTrailEngine(seed: 15)
+    engine.setMainTrunkEnabled(false)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+    engine.stop(at: 0.11)
+
+    engine.setMainTrunkEnabled(true)
+
+    XCTAssertFalse(try XCTUnwrap(engine.frame(at: 0.35).bolts.first).trunkVisible)
   }
 
   func testMovesAfterExplicitStopAreIgnoredUntilMovementResumes() {

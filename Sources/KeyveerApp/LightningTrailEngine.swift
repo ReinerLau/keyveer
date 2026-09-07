@@ -73,6 +73,7 @@ struct LightningBolt: Equatable {
   let nextArcIndex: Int
   let createdAt: TimeInterval
   let stoppedAt: TimeInterval?
+  let mainTrunkEnabledAtStop: Bool?
   let glowScale: CGFloat
   let bendConfiguration: LightningBendConfiguration
 }
@@ -330,13 +331,16 @@ struct LightningTrailEngine {
     if let frameDuration, frameDuration.isFinite, frameDuration > 0 {
       displayFrameDuration = frameDuration
     }
-    let trunkVisible = mainTrunkVisibility(at: timestamp)
+    let activeTrunkVisible = mainTrunkVisibility(at: timestamp)
     let activeArcIDs = Set(bolts.flatMap { $0.arcs.map(\.id) })
     companionArcFlickerStates = companionArcFlickerStates.filter {
       activeArcIDs.contains($0.key)
     }
     var renderedBolts: [RenderedLightningBolt] = []
     for bolt in bolts {
+      let trunkVisible = bolt.stoppedAt == nil
+        ? activeTrunkVisible
+        : (bolt.mainTrunkEnabledAtStop ?? activeTrunkVisible)
       renderedBolts.append(RenderedLightningBolt(
         id: bolt.id,
         trunk: bolt.trunk,
@@ -458,7 +462,7 @@ struct LightningTrailEngine {
         segments: makeSegmentProfiles(
           points: sampledCenterline, randomWidths: false, random: &profileRandom),
         arcs: [], nextArcStartDistance: 0, nextArcIndex: 0,
-        createdAt: createdAt, stoppedAt: nil, glowScale: 1,
+        createdAt: createdAt, stoppedAt: nil, mainTrunkEnabledAtStop: nil, glowScale: 1,
         bendConfiguration: bendConfiguration)
     }
 
@@ -490,7 +494,7 @@ struct LightningTrailEngine {
       nextArcStartDistance: nextStart,
       nextArcIndex: nextIndex,
       createdAt: createdAt,
-      stoppedAt: nil, glowScale: 1,
+      stoppedAt: nil, mainTrunkEnabledAtStop: nil, glowScale: 1,
       bendConfiguration: bendConfiguration)
   }
 
@@ -760,6 +764,7 @@ struct LightningTrailEngine {
         nextArcIndex: bolt.nextArcIndex,
         createdAt: bolt.createdAt,
         stoppedAt: bolt.stoppedAt,
+        mainTrunkEnabledAtStop: bolt.mainTrunkEnabledAtStop,
         glowScale: bolt.glowScale,
         bendConfiguration: bolt.bendConfiguration)
     }
@@ -806,6 +811,7 @@ struct LightningTrailEngine {
       nextArcIndex: active.nextArcIndex,
       createdAt: active.createdAt,
       stoppedAt: timestamp,
+      mainTrunkEnabledAtStop: mainTrunkEnabled,
       glowScale: active.glowScale,
       bendConfiguration: active.bendConfiguration)
     bolts[activeIndex] = stopped
