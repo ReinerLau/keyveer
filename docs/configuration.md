@@ -59,7 +59,11 @@
       "coreColor": "#FFFFFF",
       "outerGlowColor": "#008FEF",
       "outerGlowOpacity": 1.0,
-      "glowStrength": 1.0
+      "glowStrength": 1.0,
+      "trunkFlickerIntervalMin": 0.12,
+      "trunkFlickerIntervalMax": 0.30,
+      "trunkFlickerFramesMin": 1,
+      "trunkFlickerFramesMax": 2
     }
   }
 }
@@ -114,11 +118,16 @@
 路线持续生长；移动期间不限制最大长度，也不会删除或淡化旧段。释放最后一个键盘移动键会
 立即触发停止；仅物理鼠标移动时仍以约 100ms 的无位移作为兜底。停止后主干冻结在原位置，
 各处以不同顺序收细、断裂，并在约 0.45 秒内完全移除。它不会从某一端向另一端
-擦除，也不产生同等粗细的分叉或飞散火花；主干旁的伴随电弧会从尾部开始，按随机长度分段生长，
-段与段之间按随机路径距离留出间隔；旧段保持原位直到整条主干停止后统一消散。
+擦除，也不产生同等粗细的分叉或飞散火花；伴随电弧是比主干更细的独立随机折线，
+沿主干相同方向但不复用主干坐标，在随机路径距离触发后从当前位置开始生长。
+每条电弧都有独立的随机长度和停留时间，达到长度或主干停止后停止增长，停留时间从停止增长时开始计算，
+到期后单独消失；电弧数量不设上限，也不因主干消失而提前移除。
 
-键盘控制时，默认速度和精确慢速（`precision`）隐藏醒目的闪电主干，但保留细弱伴随电弧；按住任一速度键
+键盘控制时，默认速度和精确慢速（`precision`）隐藏醒目的主干，但保留细弱伴随电弧；按住任一速度键
 （`speedOne` / `speedTwo` / `speedThree`）后重新显示主干。物理鼠标移动不受此速度档位限制。
+主干和每条伴随电弧分别以约 120–300ms 的独立随机间隔短暂隐藏 1–2 个显示帧，彼此不要求同步。
+停止移动后的消散阶段、以及 macOS 开启 Reduce Motion 时不会新增此类闪烁。
+上述间隔和隐藏帧数可通过下方 `trunkFlicker*` 配置项调整。
 
 `coreWidth` 是白芯的基准宽度。每个局部段生成时会取得固定的随机倍率，实际宽度为
 `coreWidth × 0.45...1.6`；随机范围与轨迹位置无关，生成后不会继续变化。闪电折点也使用
@@ -132,8 +141,11 @@
 | `bendSpacingMin` / `bendSpacingMax` | `24` / `36` | 主折点间距的随机范围（pt）；整体值越大折点越稀疏，越小越密集 |
 | `bendOffsetDistanceMin` / `bendOffsetDistanceMax` | `6` / `24` | 主折点随机偏移距离范围（pt） |
 | `bendOffsetDirectionMin` / `bendOffsetDirectionMax` | `-90` / `90` | 相对路径前进方向的随机偏移角度范围（度）；正角度向左、负角度向右；默认限制在前方半圆 |
-| `arcLengthMin` / `arcLengthMax` | `80` / `180` | 每段伴随电弧的随机长度范围（pt）；达到上限后该段停止生长 |
-| `arcGapMin` / `arcGapMax` | `24` / `72` | 相邻伴随电弧段之间的随机间隔范围（pt） |
+| `arcLengthMin` / `arcLengthMax` | `80` / `180` | 每条伴随电弧独立抽取的生长长度范围（pt） |
+| `arcGapMin` / `arcGapMax` | `24` / `72` | 新伴随电弧随机生成的路径距离间隔范围（pt） |
+| `arcHoldMin` / `arcHoldMax` | `0.20` / `0.50` | 电弧停止增长后的随机停留时间范围（秒） |
+| `trunkFlickerIntervalMin` / `trunkFlickerIntervalMax` | `0.12` / `0.30` | 主干随机隐藏节点之间的间隔范围（秒） |
+| `trunkFlickerFramesMin` / `trunkFlickerFramesMax` | `1` / `2` | 每次主干隐藏的显示帧数范围；必须为整数 |
 | `blurRadius` | `16` | 轨迹外层高斯模糊半径（pt） |
 | `coreColor` / `outerGlowColor` | `#FFFFFF` / `#008FEF` | 白芯与外层辉光颜色 |
 | `outerGlowOpacity` | `1` | 外层辉光透明度（`0` 到 `1`） |

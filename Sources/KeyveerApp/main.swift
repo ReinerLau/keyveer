@@ -510,6 +510,7 @@ final class LightningTrailView: NSView {
             visualSettings: drawingState.visualSettings)
         }
         for arc in bolt.arcs {
+          guard arc.visible else { continue }
           guard let arcPaths = paths.arcs[arc.id] else { continue }
           draw(
             arcPaths, renderedSegments: arc.segments,
@@ -753,7 +754,14 @@ private final class CursorMarkerController {
       arcLengthMin: CGFloat(settings.trail.arcLengthMin),
       arcLengthMax: CGFloat(settings.trail.arcLengthMax),
       arcGapMin: CGFloat(settings.trail.arcGapMin),
-      arcGapMax: CGFloat(settings.trail.arcGapMax))
+      arcGapMax: CGFloat(settings.trail.arcGapMax),
+      arcHoldMin: settings.trail.arcHoldMin,
+      arcHoldMax: settings.trail.arcHoldMax)
+    lightning.updateTrunkFlickerConfiguration(
+      intervalMin: settings.trail.trunkFlickerIntervalMin,
+      intervalMax: settings.trail.trunkFlickerIntervalMax,
+      framesMin: Int(settings.trail.trunkFlickerFramesMin),
+      framesMax: Int(settings.trail.trunkFlickerFramesMax))
 
     if let window {
       window.setContentSize(NSSize(width: markerCanvasSize, height: markerCanvasSize))
@@ -818,8 +826,8 @@ private final class CursorMarkerController {
     render(at: now)
   }
 
-  func tick() {
-    render(at: CACurrentMediaTime())
+  func tick(frameDuration: TimeInterval) {
+    render(at: CACurrentMediaTime(), frameDuration: frameDuration)
   }
 
   func screenConfigurationChanged() {
@@ -859,9 +867,9 @@ private final class CursorMarkerController {
     configureOverlayPanel(panel)
   }
 
-  private func render(at timestamp: TimeInterval) {
+  private func render(at timestamp: TimeInterval, frameDuration: TimeInterval? = nil) {
     guard isShown, let window else { return }
-    let frame = lightning.frame(at: timestamp)
+    let frame = lightning.frame(at: timestamp, frameDuration: frameDuration)
     if frame.isEmpty {
       trailWindow?.orderOut(nil)
       if let trailView = trailWindow?.contentView as? LightningTrailView {
@@ -1403,7 +1411,7 @@ private final class KeyveerApplicationController: NSObject {
     let delta = elapsed.isFinite ? max(elapsed, 0) : 0
     lastFrameTime = link.timestamp
     apply(runtimeResponse(for: .frame(deltaTime: delta)))
-    cursorMarker.tick()
+    cursorMarker.tick(frameDuration: link.duration)
     // TCC has no reliable change notification. Poll on every display frame so a permission
     // revocation can end free mode before the next user-visible frame, without touching the tap
     // callback's latency-sensitive path.

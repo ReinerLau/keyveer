@@ -137,7 +137,9 @@ func run() -> Int32 {
       generatedTrail["arcLengthMin"] as? Double == 80,
       generatedTrail["arcLengthMax"] as? Double == 180,
       generatedTrail["arcGapMin"] as? Double == 24,
-      generatedTrail["arcGapMax"] as? Double == 72
+      generatedTrail["arcGapMax"] as? Double == 72,
+      generatedTrail["arcHoldMin"] as? Double == 0.20,
+      generatedTrail["arcHoldMax"] as? Double == 0.50
     else {
       print("FAIL: generated trail configuration has incorrect companion arc defaults.")
       return 1
@@ -165,6 +167,8 @@ func run() -> Int32 {
     trail["arcLengthMax"] = 160.0
     trail["arcGapMin"] = 30.0
     trail["arcGapMax"] = 60.0
+    trail["arcHoldMin"] = 0.3
+    trail["arcHoldMax"] = 0.7
     visual["trail"] = trail
     valid["visual"] = visual
     try writeObject(valid)

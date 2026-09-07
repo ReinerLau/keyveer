@@ -1342,6 +1342,12 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(trail["arcLengthMax"] as? Double, 180)
     XCTAssertEqual(trail["arcGapMin"] as? Double, 24)
     XCTAssertEqual(trail["arcGapMax"] as? Double, 72)
+    XCTAssertEqual(trail["arcHoldMin"] as? Double, 0.20)
+    XCTAssertEqual(trail["arcHoldMax"] as? Double, 0.50)
+    XCTAssertEqual(trail["trunkFlickerIntervalMin"] as? Double, 0.12)
+    XCTAssertEqual(trail["trunkFlickerIntervalMax"] as? Double, 0.30)
+    XCTAssertEqual(trail["trunkFlickerFramesMin"] as? Double, 1)
+    XCTAssertEqual(trail["trunkFlickerFramesMax"] as? Double, 2)
   }
 
   func testVisualConfigurationDefaultsAndPartialValuesAreAccepted() throws {
@@ -1353,11 +1359,20 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(defaults.marker.glowStrength, 1.0)
     XCTAssertEqual(defaults.trail.outerGlowOpacity, 1.0)
     XCTAssertEqual(defaults.trail.glowStrength, 1.0)
+    XCTAssertEqual(defaults.trail.trunkFlickerIntervalMin, 0.12)
+    XCTAssertEqual(defaults.trail.trunkFlickerIntervalMax, 0.30)
+    XCTAssertEqual(defaults.trail.trunkFlickerFramesMin, 1)
+    XCTAssertEqual(defaults.trail.trunkFlickerFramesMax, 2)
 
     var object = try configurationObject()
     object["visual"] = [
       "marker": ["glowRadius": 14.0],
-      "trail": ["blurRadius": 24.0, "outerGlowOpacity": 0.35, "glowStrength": 1.5],
+      "trail": [
+        "blurRadius": 24.0, "outerGlowOpacity": 0.35, "glowStrength": 1.5,
+        "arcHoldMin": 0.3, "arcHoldMax": 0.7,
+        "trunkFlickerIntervalMin": 0.2, "trunkFlickerIntervalMax": 0.4,
+        "trunkFlickerFramesMin": 3.0, "trunkFlickerFramesMax": 5.0,
+      ],
     ]
     let response = KeyveerRuntime(permissions: .allGranted).handle(
       .configuration(try JSONSerialization.data(withJSONObject: object)))
@@ -1371,6 +1386,12 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(decoded.visual.trail.blurRadius, 24)
     XCTAssertEqual(decoded.visual.trail.outerGlowOpacity, 0.35)
     XCTAssertEqual(decoded.visual.trail.glowStrength, 1.5)
+    XCTAssertEqual(decoded.visual.trail.arcHoldMin, 0.3)
+    XCTAssertEqual(decoded.visual.trail.arcHoldMax, 0.7)
+    XCTAssertEqual(decoded.visual.trail.trunkFlickerIntervalMin, 0.2)
+    XCTAssertEqual(decoded.visual.trail.trunkFlickerIntervalMax, 0.4)
+    XCTAssertEqual(decoded.visual.trail.trunkFlickerFramesMin, 3)
+    XCTAssertEqual(decoded.visual.trail.trunkFlickerFramesMax, 5)
 
     var partialBend = try configurationObject()
     partialBend["visual"] = [
@@ -1389,6 +1410,8 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(partialDecoded.visual.trail.arcLengthMax, 180)
     XCTAssertEqual(partialDecoded.visual.trail.arcGapMin, 24)
     XCTAssertEqual(partialDecoded.visual.trail.arcGapMax, 72)
+    XCTAssertEqual(partialDecoded.visual.trail.arcHoldMin, 0.20)
+    XCTAssertEqual(partialDecoded.visual.trail.arcHoldMax, 0.50)
 
     var customSpacing = try configurationObject()
     customSpacing["visual"] = [
@@ -1508,6 +1531,12 @@ final class KeyveerRuntimeTests: XCTestCase {
       ("arcLengthMax", 641.0),
       ("arcGapMin", -1.0),
       ("arcGapMax", 641.0),
+      ("arcHoldMin", 0.009),
+      ("arcHoldMax", 10.1),
+      ("trunkFlickerIntervalMin", 0.009),
+      ("trunkFlickerIntervalMax", 10.1),
+      ("trunkFlickerFramesMin", 0.0),
+      ("trunkFlickerFramesMax", 121.0),
     ] {
       var invalidBend = try configurationObject()
       invalidBend["visual"] = ["trail": [field: value]]
@@ -1520,6 +1549,48 @@ final class KeyveerRuntimeTests: XCTestCase {
         return false
       }))
     }
+
+    for (field, value) in [
+      ("trunkFlickerFramesMin", 1.5),
+      ("trunkFlickerFramesMax", 2.5),
+    ] {
+      var fractionalFrames = try configurationObject()
+      fractionalFrames["visual"] = ["trail": [field: value]]
+      let response = runtime.handle(
+        .configuration(try JSONSerialization.data(withJSONObject: fractionalFrames)))
+      XCTAssertTrue(response.effects.contains(where: { effect in
+        if case .configurationRejected(let reason) = effect {
+          return reason.contains("visual.trail.\(field)")
+        }
+        return false
+      }))
+    }
+
+    var reversedFlickerInterval = try configurationObject()
+    reversedFlickerInterval["visual"] = [
+      "trail": ["trunkFlickerIntervalMin": 0.4, "trunkFlickerIntervalMax": 0.2]
+    ]
+    let reversedFlickerIntervalResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedFlickerInterval)))
+    XCTAssertTrue(reversedFlickerIntervalResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.trunkFlickerIntervalMin")
+      }
+      return false
+    }))
+
+    var reversedFlickerFrames = try configurationObject()
+    reversedFlickerFrames["visual"] = [
+      "trail": ["trunkFlickerFramesMin": 5.0, "trunkFlickerFramesMax": 3.0]
+    ]
+    let reversedFlickerFramesResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedFlickerFrames)))
+    XCTAssertTrue(reversedFlickerFramesResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.trunkFlickerFramesMin")
+      }
+      return false
+    }))
 
     var reversedDistance = try configurationObject()
     reversedDistance["visual"] = [
@@ -1582,6 +1653,19 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertTrue(reversedArcGapResponse.effects.contains(where: { effect in
       if case .configurationRejected(let reason) = effect {
         return reason.contains("visual.trail.arcGapMin")
+      }
+      return false
+    }))
+
+    var reversedArcHold = try configurationObject()
+    reversedArcHold["visual"] = [
+      "trail": ["arcHoldMin": 0.5, "arcHoldMax": 0.2]
+    ]
+    let reversedArcHoldResponse = runtime.handle(
+      .configuration(try JSONSerialization.data(withJSONObject: reversedArcHold)))
+    XCTAssertTrue(reversedArcHoldResponse.effects.contains(where: { effect in
+      if case .configurationRejected(let reason) = effect {
+        return reason.contains("visual.trail.arcHoldMin")
       }
       return false
     }))

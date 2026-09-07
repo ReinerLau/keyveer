@@ -14,9 +14,7 @@ final class LightningTrailEngineTests: XCTestCase {
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
     XCTAssertEqual(bolt.trunk.points.first, CGPoint(x: 0, y: 0))
     XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 8, y: 0))
-    let arc = try! XCTUnwrap(bolt.arcs.first)
-    XCTAssertEqual(arc.stroke.points.first, bolt.trunk.points.first)
-    XCTAssertEqual(arc.stroke.points.last, bolt.trunk.points.last)
+    XCTAssertLessThanOrEqual(bolt.arcs.count, 2)
   }
 
   func testMovementBelowEightPointsDoesNotStartABolt() {
@@ -28,7 +26,7 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(engine.frame(at: 0.1).isEmpty)
   }
 
-  func testDisablingMainTrunkKeepsArcGeometryButHidesTheTrunk() {
+  func testDisablingMainTrunkOnlyHidesTheTrunk() {
     var engine = LightningTrailEngine(seed: 11)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
@@ -38,11 +36,177 @@ final class LightningTrailEngineTests: XCTestCase {
     let slowFrame = engine.frame(at: 0.1)
     XCTAssertFalse(slowFrame.isEmpty)
     XCTAssertFalse(try! XCTUnwrap(slowFrame.bolts.first).trunkVisible)
+    XCTAssertFalse(try! XCTUnwrap(slowFrame.bolts.first).arcs.isEmpty)
+    XCTAssertTrue(try! XCTUnwrap(slowFrame.bolts.first).arcs.allSatisfy(\.visible))
     engine.move(to: CGPoint(x: 80, y: 0), at: 0.2)
     XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
+    XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).arcs.isEmpty)
 
     engine.setMainTrunkEnabled(true)
     XCTAssertTrue(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
+  }
+
+  func testTrunkFlickerIsDeterministicAndLastsOneOrTwoDisplayFrames() {
+    let frameDuration = 1.0 / 60.0
+    let first = trunkVisibilitySequence(seed: 73, frameDuration: frameDuration)
+    let sameSeed = trunkVisibilitySequence(seed: 73, frameDuration: frameDuration)
+
+    XCTAssertEqual(first, sameSeed)
+    XCTAssertTrue(first.contains(false))
+
+    var hiddenRunLength = 0
+    for visible in first {
+      if visible {
+        XCTAssertLessThanOrEqual(hiddenRunLength, 2)
+        hiddenRunLength = 0
+      } else {
+        hiddenRunLength += 1
+      }
+    }
+    XCTAssertLessThanOrEqual(hiddenRunLength, 2)
+  }
+
+  func testConfiguredTrunkFlickerUsesTheConfiguredIntervalAndFrameCount() {
+    let frameDuration = 1.0 / 60.0
+    var engine = LightningTrailEngine(seed: 73)
+    engine.updateTrunkFlickerConfiguration(
+      intervalMin: 0.01, intervalMax: 0.01, framesMin: 3, framesMax: 3)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0)
+
+    var hiddenRunLength = 0
+    var foundHiddenRun = false
+    for index in 0...120 {
+      let timestamp = Double(index) * frameDuration
+      engine.move(to: CGPoint(x: 400 + CGFloat(index), y: 0), at: timestamp)
+      let visible = engine.frame(at: timestamp, frameDuration: frameDuration)
+        .bolts.first?.trunkVisible ?? true
+      if visible {
+        if hiddenRunLength > 0 {
+          XCTAssertEqual(hiddenRunLength, 3)
+          foundHiddenRun = true
+          break
+        }
+      } else {
+        hiddenRunLength += 1
+      }
+    }
+
+    XCTAssertTrue(foundHiddenRun)
+  }
+
+  func testHiddenTrunkDoesNotHideCompanionArcs() throws {
+    let frameDuration = 1.0 / 60.0
+    var engine = LightningTrailEngine(seed: 73)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0)
+
+    for index in 0...240 {
+      let timestamp = Double(index) * frameDuration
+      engine.move(to: CGPoint(x: 400 + CGFloat(index), y: 0), at: timestamp)
+      let frame = engine.frame(at: timestamp, frameDuration: frameDuration)
+      guard let bolt = frame.bolts.first, !bolt.trunkVisible else { continue }
+      XCTAssertTrue(bolt.arcs.contains(where: \.visible))
+      return
+    }
+
+    XCTFail("Expected a hidden trunk frame")
+  }
+
+  func testCompanionArcFlickerIsIndependentFromTheTrunkAndOtherArcs() throws {
+    var foundDifferenceFromTrunk = false
+    var foundDifferenceBetweenArcs = false
+
+    for seed in 0..<100 {
+      var engine = LightningTrailEngine(seed: UInt64(seed))
+      engine.updateBendOffsetConfiguration(
+        spacingMin: 30, spacingMax: 30,
+        distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+        arcGapMin: 24, arcGapMax: 24)
+      engine.updateTrunkFlickerConfiguration(
+        intervalMin: 0.01, intervalMax: 0.01, framesMin: 1, framesMax: 1)
+      engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+      engine.move(to: CGPoint(x: 400, y: 0), at: 0.01)
+
+      for index in 0...120 {
+        let timestamp = 0.02 + Double(index) / 60
+        engine.move(to: CGPoint(x: 400 + CGFloat(index), y: 0), at: timestamp)
+        guard let bolt = engine.frame(at: timestamp, frameDuration: 1.0 / 60).bolts.first else {
+          continue
+        }
+        let arcVisibility = bolt.arcs.map(\.visible)
+        if bolt.trunkVisible != arcVisibility.first {
+          foundDifferenceFromTrunk = true
+        }
+        if Set(arcVisibility).count > 1 {
+          foundDifferenceBetweenArcs = true
+        }
+      }
+      if foundDifferenceFromTrunk && foundDifferenceBetweenArcs { break }
+    }
+
+    XCTAssertTrue(foundDifferenceFromTrunk)
+    XCTAssertTrue(foundDifferenceBetweenArcs)
+  }
+
+  func testCompanionArcFlickerContinuesDuringItsIndependentHold() throws {
+    var engine = LightningTrailEngine(seed: 73)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 200, arcLengthMax: 200,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 1, arcHoldMax: 1)
+    engine.updateTrunkFlickerConfiguration(
+      intervalMin: 0.01, intervalMax: 0.01, framesMin: 1, framesMax: 1)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 50, y: 0), at: 0.1)
+
+    var foundHiddenArc = false
+    for index in 0...60 {
+      let timestamp = 0.21 + Double(index) / 60
+      let frame = engine.frame(at: timestamp, frameDuration: 1.0 / 60)
+      if frame.bolts.first?.arcs.contains(where: { !$0.visible }) == true {
+        foundHiddenArc = true
+        break
+      }
+    }
+    XCTAssertTrue(foundHiddenArc)
+  }
+
+  func testStoppingOrReducingMotionDoesNotFlickerTheTrunk() throws {
+    let frameDuration = 1.0 / 60.0
+    var engine = LightningTrailEngine(seed: 73)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0)
+    engine.stop(at: 0.2)
+
+    XCTAssertTrue(try XCTUnwrap(engine.frame(at: 0.2, frameDuration: frameDuration).bolts.first).trunkVisible)
+
+    engine.setReduceMotion(true)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 1)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 1)
+    for index in 0...240 {
+      let timestamp = 1 + Double(index) * frameDuration
+      engine.move(to: CGPoint(x: 400 + CGFloat(index), y: 0), at: timestamp)
+      XCTAssertTrue(
+        try XCTUnwrap(engine.frame(at: timestamp, frameDuration: frameDuration).bolts.first)
+          .trunkVisible)
+    }
+  }
+
+  private func trunkVisibilitySequence(
+    seed: UInt64, frameDuration: TimeInterval
+  ) -> [Bool] {
+    var engine = LightningTrailEngine(seed: seed)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0)
+
+    return (0...240).map { index in
+      let timestamp = Double(index) * frameDuration
+      engine.move(to: CGPoint(x: 400 + CGFloat(index), y: 0), at: timestamp)
+      return engine.frame(at: timestamp, frameDuration: frameDuration).bolts.first?.trunkVisible ?? true
+    }
   }
 
   func testContinuousMovementKeepsWholeBoltBeyondLegacyLimits() {
@@ -262,19 +426,30 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(points.count, 8)
   }
 
-  func testCompanionArcsAreThinAndAnchoredToTheTrunk() {
+  func testCompanionArcsAreThinIndependentPolylinesThatFollowTheTrunkDirection() {
     var found = false
     for seed in 0..<200 {
       var engine = LightningTrailEngine(seed: UInt64(seed))
+      engine.updateBendOffsetConfiguration(
+        spacingMin: 30, spacingMax: 30,
+        distanceMin: 6, distanceMax: 24, directionMinDegrees: -.pi * 180 / .pi,
+        directionMaxDegrees: .pi * 180 / .pi,
+        arcGapMin: 24, arcGapMax: 24)
       engine.move(to: CGPoint(x: 0, y: 0), at: 0)
       engine.move(to: CGPoint(x: 400, y: 0), at: 0.1)
       guard let bolt = engine.frame(at: 0.1).bolts.first, let arc = bolt.arcs.first else { continue }
 
       found = true
-      XCTAssertEqual(arc.startDistance, 0)
+      XCTAssertGreaterThan(arc.startDistance, 0)
       XCTAssertGreaterThan(arc.endDistance, arc.startDistance)
-      XCTAssertEqual(arc.stroke.points.first, bolt.trunk.points.first)
-      XCTAssertLessThanOrEqual(distanceToPolyline(arc.stroke.points.last!, bolt.trunk.points), 0.01)
+      XCTAssertFalse(bolt.trunk.points.contains(arc.stroke.points.first!))
+      XCTAssertFalse(bolt.trunk.points.contains(arc.stroke.points.last!))
+      XCTAssertTrue(arc.stroke.points.dropFirst().dropLast().contains { point in
+        !bolt.trunk.points.contains(point)
+      })
+      let arcDirection = arc.stroke.points.last!.x - arc.stroke.points.first!.x
+      let trunkDirection = bolt.trunk.points.last!.x - bolt.trunk.points.first!.x
+      XCTAssertGreaterThan(arcDirection * trunkDirection, 0)
       XCTAssertGreaterThanOrEqual(arc.widthScale, 0.25)
       XCTAssertLessThanOrEqual(arc.widthScale, 0.45)
       XCTAssertGreaterThanOrEqual(arc.opacity, 0.35)
@@ -291,6 +466,14 @@ final class LightningTrailEngineTests: XCTestCase {
   func testCompanionArcsAreDeterministicAndFrozenAsTheBoltGrows() {
     var first = LightningTrailEngine(seed: 42)
     var second = LightningTrailEngine(seed: 42)
+    first.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcGapMin: 200, arcGapMax: 200)
+    second.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcGapMin: 200, arcGapMax: 200)
     for engineIndex in 0..<2 {
       if engineIndex == 0 {
         first.move(to: CGPoint(x: 0, y: 0), at: 0)
@@ -304,12 +487,88 @@ final class LightningTrailEngineTests: XCTestCase {
     let sameSeed = try! XCTUnwrap(second.frame(at: 0.1).bolts.first)
     XCTAssertEqual(initial.arcs, sameSeed.arcs)
 
-    first.move(to: CGPoint(x: 420, y: 30), at: 0.2)
-    let extended = try! XCTUnwrap(first.frame(at: 0.2).bolts.first)
-    XCTAssertGreaterThanOrEqual(extended.arcs.count, initial.arcs.count)
-    for oldArc in initial.arcs where oldArc.endDistance <= 240 {
-      XCTAssertEqual(extended.arcs.first(where: { $0.id == oldArc.id }), oldArc)
+    first.move(to: CGPoint(x: 300, y: 30), at: 0.15)
+    let extended = try! XCTUnwrap(first.frame(at: 0.15).bolts.first)
+    XCTAssertEqual(extended.arcs.map(\.id), initial.arcs.map(\.id))
+    XCTAssertEqual(
+      Array(extended.arcs.first!.stroke.points.prefix(initial.arcs.first!.stroke.points.count)),
+      initial.arcs.first!.stroke.points)
+    XCTAssertGreaterThan(extended.arcs.first?.endDistance ?? 0, initial.arcs.first?.endDistance ?? 0)
+  }
+
+  func testGeneratingANewCompanionArcDoesNotFreezeThePreviousArc() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcLengthMin: 200, arcLengthMax: 200,
+      arcGapMin: 70, arcGapMax: 70,
+      arcHoldMin: 1, arcHoldMax: 1)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 100, y: 0), at: 0.1)
+    let beforeReplacement = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs)
+    let oldArc = try XCTUnwrap(beforeReplacement.first)
+
+    engine.move(to: CGPoint(x: 150, y: 0), at: 0.15)
+    let afterGeneration = try XCTUnwrap(engine.frame(at: 0.15).bolts.first?.arcs)
+    XCTAssertEqual(afterGeneration.count, 2)
+    let growingArc = try XCTUnwrap(afterGeneration.first { $0.id == oldArc.id })
+    XCTAssertGreaterThan(growingArc.endDistance, oldArc.endDistance)
+
+    engine.move(to: CGPoint(x: 200, y: 0), at: 0.2)
+    let afterGrowth = try XCTUnwrap(engine.frame(at: 0.2).bolts.first?.arcs)
+    let stillGrowingArc = try XCTUnwrap(afterGrowth.first { $0.id == oldArc.id })
+    XCTAssertGreaterThan(stillGrowingArc.endDistance, growingArc.endDistance)
+  }
+
+  func testCompanionArcsRespectTheirConfiguredLengthLimit() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcLengthMin: 80, arcLengthMax: 80,
+      arcGapMin: 24, arcGapMax: 24)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0.15)
+
+    let arc = try XCTUnwrap(engine.frame(at: 0.15).bolts.first?.arcs.first)
+    XCTAssertEqual(arc.endDistance - arc.startDistance, 80, accuracy: 0.001)
+    XCTAssertLessThan(arc.stroke.points.last!.x, 150)
+  }
+
+  func testCompanionArcGenerationTimingIsRandomButDeterministic() throws {
+    func firstArcStart(seed: UInt64) -> CGFloat? {
+      var engine = LightningTrailEngine(seed: seed)
+      engine.updateBendOffsetConfiguration(
+        spacingMin: 30, spacingMax: 30,
+        distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+        arcGapMin: 24, arcGapMax: 72)
+      engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+      engine.move(to: CGPoint(x: 400, y: 0), at: 0.1)
+      return engine.frame(at: 0.1).bolts.first?.arcs.first?.startDistance
     }
+
+    let first = try XCTUnwrap(firstArcStart(seed: 1))
+    XCTAssertEqual(first, try XCTUnwrap(firstArcStart(seed: 1)))
+    XCTAssertNotEqual(first, try XCTUnwrap(firstArcStart(seed: 2)))
+  }
+
+  func testCompanionArcsAreNotLimitedOrReplaced() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcGapMin: 24, arcGapMax: 24)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 100, y: 0), at: 0.1)
+    let initial = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs)
+    XCTAssertGreaterThan(initial.count, 2)
+
+    engine.move(to: CGPoint(x: 160, y: 0), at: 0.15)
+    let extended = try XCTUnwrap(engine.frame(at: 0.15).bolts.first?.arcs)
+    XCTAssertGreaterThanOrEqual(extended.count, initial.count)
+    XCTAssertTrue(extended.map(\.id).contains(initial.first!.id))
   }
 
   func testReducedMotionDoesNotGenerateCompanionArcs() {
@@ -322,8 +581,14 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(bolt.arcs.isEmpty)
   }
 
-  func testCompanionArcsDissipateInPlaceWithTheTrunk() {
+  func testCompanionArcsDissipateIndependentlyFromTheTrunk() {
     var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 0.4, arcHoldMax: 0.4)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 240, y: 0), at: 0.1)
     let initial = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
@@ -336,26 +601,122 @@ final class LightningTrailEngineTests: XCTestCase {
     let stoppedArc = try! XCTUnwrap(stopped.arcs.first)
     XCTAssertEqual(stoppedArc.stroke, initialArc.stroke)
     XCTAssertTrue(zip(stoppedArc.segments, initialArc.segments).contains { $0.widthScale < $1.widthScale })
-    XCTAssertTrue(engine.frame(at: 0.65).isEmpty)
+    XCTAssertTrue(engine.frame(at: 0.7).bolts.first?.arcs.isEmpty ?? true)
   }
 
-  func testLongRoutesGenerateSeparatedCompanionArcSegments() {
+  func testLongRoutesKeepAllNonExpiredCompanionArcsFromTheSameMovement() {
     var engine = LightningTrailEngine(seed: 99)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 1, arcHoldMax: 1)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 1_600, y: 0), at: 0.1)
 
     let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
-    XCTAssertGreaterThan(bolt.arcs.count, 1)
-    for pair in zip(bolt.arcs, bolt.arcs.dropFirst()) {
-      XCTAssertGreaterThan(pair.1.startDistance, pair.0.endDistance)
-      XCTAssertGreaterThanOrEqual(pair.0.endDistance - pair.0.startDistance, 80)
-      XCTAssertLessThanOrEqual(pair.0.endDistance - pair.0.startDistance, 180)
-      XCTAssertGreaterThanOrEqual(pair.1.startDistance - pair.0.endDistance, 24)
-      XCTAssertLessThanOrEqual(pair.1.startDistance - pair.0.endDistance, 72)
-    }
+    XCTAssertGreaterThan(bolt.arcs.count, 2)
+    XCTAssertLessThan(bolt.arcs[0].startDistance, bolt.arcs[1].startDistance)
+    XCTAssertGreaterThan(bolt.arcs[0].endDistance, bolt.arcs[0].startDistance)
+    XCTAssertGreaterThan(bolt.arcs[1].endDistance, bolt.arcs[1].startDistance)
   }
 
-  func testArcThatIsCrossedByALargeMoveIsCompletedAtItsScheduledEndpoint() {
+  func testCompanionArcUsesConfiguredRandomLengthAndStopsGrowingAtThatLength() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 0.2, arcHoldMax: 0.5)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 50, y: 0), at: 0.1)
+    let growing = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs.first)
+    XCTAssertEqual(growing.endDistance - growing.startDistance, 26, accuracy: 0.001)
+
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.15)
+    let stopped = try XCTUnwrap(engine.frame(at: 0.15).bolts.first?.arcs.first)
+    XCTAssertEqual(stopped.endDistance - stopped.startDistance, 40, accuracy: 0.001)
+
+    engine.move(to: CGPoint(x: 140, y: 0), at: 0.2)
+    let unchanged = try XCTUnwrap(engine.frame(at: 0.2).bolts.first?.arcs.first)
+    XCTAssertEqual(unchanged, stopped)
+  }
+
+  func testUnfinishedCompanionArcStartsItsHoldTimerWhenTheTrunkStops() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 200, arcLengthMax: 200,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 0.2, arcHoldMax: 0.2)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 50, y: 0), at: 0.1)
+    let beforeStop = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs.first)
+
+    let duringHold = try XCTUnwrap(engine.frame(at: 0.29).bolts.first?.arcs.first)
+    XCTAssertEqual(duringHold.stroke, beforeStop.stroke)
+    XCTAssertFalse(engine.frame(at: 0.31).isEmpty)
+    XCTAssertTrue(engine.frame(at: 0.41).bolts.first?.arcs.isEmpty ?? true)
+  }
+
+  func testCompanionArcsExpireIndependentlyOfEachOther() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 100, arcGapMax: 100,
+      arcHoldMin: 0.2, arcHoldMax: 0.2)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 130, y: 0), at: 0.1)
+    engine.move(to: CGPoint(x: 160, y: 0), at: 0.19)
+    engine.move(to: CGPoint(x: 260, y: 0), at: 0.28)
+
+    let beforeExpiry = try XCTUnwrap(engine.frame(at: 0.38).bolts.first?.arcs)
+    XCTAssertEqual(beforeExpiry.count, 2)
+    let afterFirstExpiry = try XCTUnwrap(engine.frame(at: 0.41).bolts.first?.arcs)
+    XCTAssertEqual(afterFirstExpiry.count, 1)
+    XCTAssertGreaterThan(afterFirstExpiry[0].startDistance, beforeExpiry[0].startDistance)
+    XCTAssertEqual(engine.frame(at: 0.51).bolts.first?.arcs.count, 0)
+  }
+
+  func testCompanionArcsRemainAfterTheTrunkHasDissipated() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 200, arcLengthMax: 200,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 1, arcHoldMax: 1)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 50, y: 0), at: 0.1)
+
+    let frame = engine.frame(at: 0.76)
+    XCTAssertEqual(frame.bolts.count, 1)
+    XCTAssertFalse(frame.bolts[0].arcs.isEmpty)
+    XCTAssertTrue(frame.bolts[0].segments.allSatisfy { $0.widthScale == 0 })
+  }
+
+  func testLongRoutesKeepAllNonExpiredCompanionArcs() throws {
+    var engine = LightningTrailEngine(seed: 99)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 0, distanceMax: 0, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 1, arcHoldMax: 1)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 1_600, y: 0), at: 0.1)
+
+    let arcs = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs)
+    XCTAssertGreaterThan(arcs.count, 2)
+    XCTAssertEqual(Set(arcs.map(\.id)).count, arcs.count)
+  }
+
+  func testArcThatIsCrossedByALargeMoveContinuesToTheCurrentEndpoint() {
     var engine = LightningTrailEngine(seed: 7)
     engine.updateBendOffsetConfiguration(
       spacingMin: 20, spacingMax: 20,
@@ -366,12 +727,11 @@ final class LightningTrailEngineTests: XCTestCase {
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 50, y: 0), at: 0.1)
     let partial = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs.first)
-    XCTAssertEqual(partial.stroke.points.last, CGPoint(x: 50, y: 0))
+    XCTAssertGreaterThan(partial.stroke.points.last!.x, partial.stroke.points.first!.x)
 
     engine.move(to: CGPoint(x: 200, y: 0), at: 0.15)
     let arcs = try! XCTUnwrap(engine.frame(at: 0.15).bolts.first?.arcs)
-    XCTAssertEqual(arcs.first?.stroke.points.last, CGPoint(x: 80, y: 0))
-    XCTAssertEqual(arcs.dropFirst().first?.stroke.points.first, CGPoint(x: 104, y: 0))
+    XCTAssertTrue(arcs.contains { $0.stroke.points.last!.x > 190 })
   }
 
   func testCurvedMovementHistoryBendsTheBoltAroundTheTurn() {
@@ -438,8 +798,14 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertEqual(atSixty.trunk.points.last, CGPoint(x: 300, y: 0))
   }
 
-  func testNewMovementCanGrowBesideOnlyTheLatestDissipatingBolt() {
+  func testNewMovementCanGrowBesideAnOlderBoltWithIndependentArcs() {
     var engine = LightningTrailEngine(seed: 7)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcLengthMin: 40, arcLengthMax: 40,
+      arcGapMin: 24, arcGapMax: 24,
+      arcHoldMin: 1, arcHoldMax: 1)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
     let first = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
@@ -454,8 +820,8 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(overlapping.contains { $0.id != firstID })
 
     let afterSecondStop = engine.frame(at: 0.36).bolts
-    XCTAssertEqual(afterSecondStop.count, 1)
-    XCTAssertNotEqual(afterSecondStop.first?.id, firstID)
+    XCTAssertEqual(afterSecondStop.count, 2)
+    XCTAssertTrue(afterSecondStop.contains { $0.id == firstID })
   }
 
   func testStoppedBoltStaysAtItsOriginalGeometryAndBreaksWithoutFading() {

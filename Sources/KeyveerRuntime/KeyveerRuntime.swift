@@ -921,6 +921,12 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public var arcLengthMax: Double
   public var arcGapMin: Double
   public var arcGapMax: Double
+  public var arcHoldMin: Double
+  public var arcHoldMax: Double
+  public var trunkFlickerIntervalMin: Double
+  public var trunkFlickerIntervalMax: Double
+  public var trunkFlickerFramesMin: Double
+  public var trunkFlickerFramesMax: Double
   public var blurRadius: Double
   public var coreColor: String
   public var outerGlowColor: String
@@ -941,6 +947,12 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     arcLengthMax: Double = 180,
     arcGapMin: Double = 24,
     arcGapMax: Double = 72,
+    arcHoldMin: Double = 0.20,
+    arcHoldMax: Double = 0.50,
+    trunkFlickerIntervalMin: Double = 0.12,
+    trunkFlickerIntervalMax: Double = 0.30,
+    trunkFlickerFramesMin: Double = 1,
+    trunkFlickerFramesMax: Double = 2,
     blurRadius: Double = 16,
     coreColor: String = "#FFFFFF",
     outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
@@ -957,6 +969,12 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     self.arcLengthMax = arcLengthMax
     self.arcGapMin = arcGapMin
     self.arcGapMax = arcGapMax
+    self.arcHoldMin = arcHoldMin
+    self.arcHoldMax = arcHoldMax
+    self.trunkFlickerIntervalMin = trunkFlickerIntervalMin
+    self.trunkFlickerIntervalMax = trunkFlickerIntervalMax
+    self.trunkFlickerFramesMin = trunkFlickerFramesMin
+    self.trunkFlickerFramesMax = trunkFlickerFramesMax
     self.blurRadius = blurRadius
     self.coreColor = coreColor
     self.outerGlowColor = outerGlowColor
@@ -970,7 +988,9 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     case lengthMultiplier, maxLength, coreWidth, bendSpacingMin, bendSpacingMax
     case bendOffsetDistanceMin, bendOffsetDistanceMax
     case bendOffsetDirectionMin, bendOffsetDirectionMax
-    case arcLengthMin, arcLengthMax, arcGapMin, arcGapMax
+    case arcLengthMin, arcLengthMax, arcGapMin, arcGapMax, arcHoldMin, arcHoldMax
+    case trunkFlickerIntervalMin, trunkFlickerIntervalMax
+    case trunkFlickerFramesMin, trunkFlickerFramesMax
     case blurRadius, coreColor, outerGlowColor
     case outerGlowOpacity, glowStrength
   }
@@ -994,6 +1014,16 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       arcLengthMax: try container.decodeIfPresent(Double.self, forKey: .arcLengthMax) ?? 180,
       arcGapMin: try container.decodeIfPresent(Double.self, forKey: .arcGapMin) ?? 24,
       arcGapMax: try container.decodeIfPresent(Double.self, forKey: .arcGapMax) ?? 72,
+      arcHoldMin: try container.decodeIfPresent(Double.self, forKey: .arcHoldMin) ?? 0.20,
+      arcHoldMax: try container.decodeIfPresent(Double.self, forKey: .arcHoldMax) ?? 0.50,
+      trunkFlickerIntervalMin: try container.decodeIfPresent(
+        Double.self, forKey: .trunkFlickerIntervalMin) ?? 0.12,
+      trunkFlickerIntervalMax: try container.decodeIfPresent(
+        Double.self, forKey: .trunkFlickerIntervalMax) ?? 0.30,
+      trunkFlickerFramesMin: try container.decodeIfPresent(
+        Double.self, forKey: .trunkFlickerFramesMin) ?? 1,
+      trunkFlickerFramesMax: try container.decodeIfPresent(
+        Double.self, forKey: .trunkFlickerFramesMax) ?? 2,
       blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
@@ -1018,6 +1048,12 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     try container.encode(arcLengthMax, forKey: .arcLengthMax)
     try container.encode(arcGapMin, forKey: .arcGapMin)
     try container.encode(arcGapMax, forKey: .arcGapMax)
+    try container.encode(arcHoldMin, forKey: .arcHoldMin)
+    try container.encode(arcHoldMax, forKey: .arcHoldMax)
+    try container.encode(trunkFlickerIntervalMin, forKey: .trunkFlickerIntervalMin)
+    try container.encode(trunkFlickerIntervalMax, forKey: .trunkFlickerIntervalMax)
+    try container.encode(trunkFlickerFramesMin, forKey: .trunkFlickerFramesMin)
+    try container.encode(trunkFlickerFramesMax, forKey: .trunkFlickerFramesMax)
     try container.encode(blurRadius, forKey: .blurRadius)
     try container.encode(coreColor, forKey: .coreColor)
     try container.encode(outerGlowColor, forKey: .outerGlowColor)
@@ -1072,6 +1108,39 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       throw ConfigurationError.invalidValue(
         name: "visual.trail.arcGapMin",
         description: "must be less than or equal to visual.trail.arcGapMax")
+    }
+    try validate(arcHoldMin, named: "visual.trail.arcHoldMin", range: 0.01...10)
+    try validate(arcHoldMax, named: "visual.trail.arcHoldMax", range: 0.01...10)
+    guard arcHoldMin <= arcHoldMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.arcHoldMin",
+        description: "must be less than or equal to visual.trail.arcHoldMax")
+    }
+    try validate(
+      trunkFlickerIntervalMin, named: "visual.trail.trunkFlickerIntervalMin", range: 0.01...10)
+    try validate(
+      trunkFlickerIntervalMax, named: "visual.trail.trunkFlickerIntervalMax", range: 0.01...10)
+    guard trunkFlickerIntervalMin <= trunkFlickerIntervalMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.trunkFlickerIntervalMin",
+        description: "must be less than or equal to visual.trail.trunkFlickerIntervalMax")
+    }
+    try validate(
+      trunkFlickerFramesMin, named: "visual.trail.trunkFlickerFramesMin", range: 1...120)
+    try validate(
+      trunkFlickerFramesMax, named: "visual.trail.trunkFlickerFramesMax", range: 1...120)
+    guard trunkFlickerFramesMin.rounded() == trunkFlickerFramesMin else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.trunkFlickerFramesMin", description: "must be an integer")
+    }
+    guard trunkFlickerFramesMax.rounded() == trunkFlickerFramesMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.trunkFlickerFramesMax", description: "must be an integer")
+    }
+    guard trunkFlickerFramesMin <= trunkFlickerFramesMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.trunkFlickerFramesMin",
+        description: "must be less than or equal to visual.trail.trunkFlickerFramesMax")
     }
     try validate(blurRadius, named: "visual.trail.blurRadius", range: 0...48)
     try validateHexColor(coreColor, named: "visual.trail.coreColor")

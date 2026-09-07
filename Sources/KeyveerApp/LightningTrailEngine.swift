@@ -23,6 +23,10 @@ struct LightningArc: Equatable {
   let id: UInt64
   let startDistance: CGFloat
   let endDistance: CGFloat
+  let targetLength: CGFloat
+  let continuesGrowing: Bool
+  let growthStoppedAt: TimeInterval?
+  let holdDuration: TimeInterval
   let bendConfiguration: LightningBendConfiguration
   let stroke: LightningStroke
   let segments: [LightningSegmentProfile]
@@ -41,6 +45,8 @@ struct LightningBendConfiguration: Equatable {
   let arcLengthMax: CGFloat
   let arcGapMin: CGFloat
   let arcGapMax: CGFloat
+  let arcHoldMin: TimeInterval
+  let arcHoldMax: TimeInterval
 
   static let `default` = LightningBendConfiguration(
     spacingMin: 24,
@@ -52,7 +58,9 @@ struct LightningBendConfiguration: Equatable {
     arcLengthMin: 80,
     arcLengthMax: 180,
     arcGapMin: 24,
-    arcGapMax: 72)
+    arcGapMax: 72,
+    arcHoldMin: 0.20,
+    arcHoldMax: 0.50)
 }
 
 struct LightningBolt: Equatable {
@@ -107,6 +115,7 @@ struct RenderedLightningArc: Equatable {
   let segments: [RenderedLightningSegment]
   let widthScale: CGFloat
   let opacity: CGFloat
+  let visible: Bool
 
   init(
     id: UInt64 = 0,
@@ -115,7 +124,8 @@ struct RenderedLightningArc: Equatable {
     stroke: LightningStroke,
     segments: [RenderedLightningSegment],
     widthScale: CGFloat,
-    opacity: CGFloat
+    opacity: CGFloat,
+    visible: Bool = true
   ) {
     self.id = id
     self.startDistance = startDistance
@@ -124,6 +134,7 @@ struct RenderedLightningArc: Equatable {
     self.segments = segments
     self.widthScale = widthScale
     self.opacity = opacity
+    self.visible = visible
   }
 }
 
@@ -169,10 +180,21 @@ struct LightningTrailEngine {
   private static let stopDelay: TimeInterval = 0.10
   private static let minimumSpan: CGFloat = 8
   private static let reducedMotionSpacing: CGFloat = 18
-
+  private static let defaultTrunkFlickerIntervalMin: TimeInterval = 0.12
+  private static let defaultTrunkFlickerIntervalMax: TimeInterval = 0.30
+  private static let defaultTrunkFlickerFramesMin = 1
+  private static let defaultTrunkFlickerFramesMax = 2
+  private static let fallbackDisplayFrameDuration: TimeInterval = 1.0 / 60.0
+  private static let trunkFlickerSeedSalt: UInt64 = 0xC6BC_2796_92B5_CC83
+  private static let companionArcScheduleSeedSalt: UInt64 = 0x6A09_E667_F3BC_C909
+  private static let companionArcGeometrySeedSalt: UInt64 = 0xD1B5_4A32_D192_ED03
+  private static let companionArcProfileSeedSalt: UInt64 = 0xA24B_AED4_963E_E407
+  private static let companionArcIDMultiplier: UInt64 = 0x94D0_49BB_1331_11EB
+  private static let companionArcFlickerSeedSalt: UInt64 = 0x510E_527F_ADE6_82D1
   private var samples: [Sample] = []
   private var bolts: [LightningBolt] = []
   private var random: SplitMix64
+  private var trunkFlickerRandom: SplitMix64
   private var bendConfiguration = LightningBendConfiguration.default
   private var lastMovementTime: TimeInterval?
   private var lastKnownPoint: CGPoint?
@@ -180,9 +202,29 @@ struct LightningTrailEngine {
   private(set) var reduceMotion = false
   private var movementSuppressed = false
   private var mainTrunkEnabled = true
+  private var nextTrunkFlickerAt: TimeInterval?
+  private var trunkHiddenUntil: TimeInterval?
+  private var displayFrameDuration = Self.fallbackDisplayFrameDuration
+  private var trunkFlickerIntervalMin = Self.defaultTrunkFlickerIntervalMin
+  private var trunkFlickerIntervalMax = Self.defaultTrunkFlickerIntervalMax
+  private var trunkFlickerFramesMin = Self.defaultTrunkFlickerFramesMin
+  private var trunkFlickerFramesMax = Self.defaultTrunkFlickerFramesMax
+
+  private struct CompanionArcFlickerState {
+    var random: SplitMix64
+    var nextFlickerAt: TimeInterval?
+    var hiddenUntil: TimeInterval?
+
+    init(arcID: UInt64) {
+      random = SplitMix64(seed: arcID ^ LightningTrailEngine.companionArcFlickerSeedSalt)
+    }
+  }
+
+  private var companionArcFlickerStates: [UInt64: CompanionArcFlickerState] = [:]
 
   init(seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max)) {
     random = SplitMix64(seed: seed)
+    trunkFlickerRandom = SplitMix64(seed: seed ^ Self.trunkFlickerSeedSalt)
   }
 
   mutating func setReduceMotion(_ enabled: Bool) {
@@ -197,17 +239,32 @@ struct LightningTrailEngine {
     lastMovementTime = nil
     lastKnownPoint = nil
     movementSuppressed = false
+    nextTrunkFlickerAt = nil
+    trunkHiddenUntil = nil
+    companionArcFlickerStates.removeAll(keepingCapacity: true)
   }
 
   mutating func resumeMovement() {
     movementSuppressed = false
   }
 
-  /// Controls visibility of the thick main trunk without discarding the companion arc geometry.
-  /// This lets default/precision-slow keyboard movement retain the subtle arc while suppressing
-  /// the prominent trunk until a fast-speed key is held.
+  /// Controls visibility of the thick main trunk; companion arcs keep independent visibility.
   mutating func setMainTrunkEnabled(_ enabled: Bool) {
     mainTrunkEnabled = enabled
+  }
+
+  mutating func updateTrunkFlickerConfiguration(
+    intervalMin: TimeInterval,
+    intervalMax: TimeInterval,
+    framesMin: Int,
+    framesMax: Int
+  ) {
+    trunkFlickerIntervalMin = intervalMin
+    trunkFlickerIntervalMax = intervalMax
+    trunkFlickerFramesMin = framesMin
+    trunkFlickerFramesMax = framesMax
+    resetTrunkFlicker()
+    companionArcFlickerStates.removeAll(keepingCapacity: true)
   }
 
   mutating func updateBendOffsetConfiguration(
@@ -220,7 +277,9 @@ struct LightningTrailEngine {
     arcLengthMin: CGFloat = 80,
     arcLengthMax: CGFloat = 180,
     arcGapMin: CGFloat = 24,
-    arcGapMax: CGFloat = 72
+    arcGapMax: CGFloat = 72,
+    arcHoldMin: TimeInterval = 0.20,
+    arcHoldMax: TimeInterval = 0.50
   ) {
     bendConfiguration = LightningBendConfiguration(
       spacingMin: spacingMin,
@@ -232,7 +291,9 @@ struct LightningTrailEngine {
       arcLengthMin: arcLengthMin,
       arcLengthMax: arcLengthMax,
       arcGapMin: arcGapMin,
-      arcGapMax: arcGapMax)
+      arcGapMax: arcGapMax,
+      arcHoldMin: arcHoldMin,
+      arcHoldMax: arcHoldMax)
   }
 
   mutating func move(to point: CGPoint, at timestamp: TimeInterval) {
@@ -262,19 +323,75 @@ struct LightningTrailEngine {
     stopActiveBolt(at: timestamp, index: activeIndex)
   }
 
-  mutating func frame(at timestamp: TimeInterval) -> LightningTrailFrame {
+  mutating func frame(
+    at timestamp: TimeInterval, frameDuration: TimeInterval? = nil
+  ) -> LightningTrailFrame {
     prune(at: timestamp)
-    let renderedBolts = bolts.map { bolt in
-      RenderedLightningBolt(
+    if let frameDuration, frameDuration.isFinite, frameDuration > 0 {
+      displayFrameDuration = frameDuration
+    }
+    let trunkVisible = mainTrunkVisibility(at: timestamp)
+    let activeArcIDs = Set(bolts.flatMap { $0.arcs.map(\.id) })
+    companionArcFlickerStates = companionArcFlickerStates.filter {
+      activeArcIDs.contains($0.key)
+    }
+    var renderedBolts: [RenderedLightningBolt] = []
+    for bolt in bolts {
+      renderedBolts.append(RenderedLightningBolt(
         id: bolt.id,
         trunk: bolt.trunk,
-        trunkVisible: mainTrunkEnabled,
+        trunkVisible: trunkVisible,
         segments: renderedSegments(for: bolt, at: timestamp),
         arcs: renderedArcs(for: bolt, at: timestamp),
         alpha: 1,
-        glowScale: bolt.glowScale)
+        glowScale: bolt.glowScale))
     }
     return LightningTrailFrame(bolts: renderedBolts)
+  }
+
+  private mutating func mainTrunkVisibility(at timestamp: TimeInterval) -> Bool {
+    guard mainTrunkEnabled else {
+      resetTrunkFlicker()
+      return false
+    }
+    guard !reduceMotion, bolts.contains(where: { $0.stoppedAt == nil }) else {
+      resetTrunkFlicker()
+      return true
+    }
+
+    if let trunkHiddenUntil {
+      if timestamp < trunkHiddenUntil {
+        return false
+      }
+      self.trunkHiddenUntil = nil
+    }
+
+    if nextTrunkFlickerAt == nil {
+      nextTrunkFlickerAt = timestamp + nextTrunkFlickerInterval()
+      return true
+    }
+    guard timestamp >= nextTrunkFlickerAt! else { return true }
+
+    let frameRange = trunkFlickerFramesMax - trunkFlickerFramesMin
+    let hiddenFrameCount = trunkFlickerFramesMin
+      + Int(trunkFlickerRandom.next() % UInt64(frameRange + 1))
+    trunkHiddenUntil = timestamp + Double(hiddenFrameCount) * displayFrameDuration
+    nextTrunkFlickerAt = trunkHiddenUntil! + nextTrunkFlickerInterval()
+    return false
+  }
+
+  private mutating func nextTrunkFlickerInterval() -> TimeInterval {
+    nextTrunkFlickerInterval(using: &trunkFlickerRandom)
+  }
+
+  private func nextTrunkFlickerInterval(using random: inout SplitMix64) -> TimeInterval {
+    trunkFlickerIntervalMin
+      + Double(random.unit()) * (trunkFlickerIntervalMax - trunkFlickerIntervalMin)
+  }
+
+  private mutating func resetTrunkFlicker() {
+    nextTrunkFlickerAt = nil
+    trunkHiddenUntil = nil
   }
 
   private mutating func emitIfReady(at timestamp: TimeInterval) {
@@ -302,6 +419,7 @@ struct LightningTrailEngine {
     }
     let generated = makeBolt(
       along: centerline, id: boltID, seed: boltSeed, createdAt: createdAt,
+      timestamp: timestamp,
       bendConfiguration: configuration,
       existingArcs: activeIndex.map { bolts[$0].arcs } ?? [],
       nextArcStartDistance: activeIndex.map { bolts[$0].nextArcStartDistance } ?? 0,
@@ -316,6 +434,7 @@ struct LightningTrailEngine {
 
   private func makeBolt(
     along centerline: [CGPoint], id: UInt64, seed: UInt64, createdAt: TimeInterval,
+    timestamp: TimeInterval,
     bendConfiguration: LightningBendConfiguration,
     existingArcs: [LightningArc], nextArcStartDistance: CGFloat, nextArcIndex: Int,
     arcConfiguration: LightningBendConfiguration
@@ -358,9 +477,10 @@ struct LightningTrailEngine {
     primaryBendPoints.append(head)
     let trunk = LightningStroke(points: primaryBendPoints)
     let (arcs, nextStart, nextIndex) = makeCompanionArcs(
-      centerline: sampledCenterline, trunk: trunk, seed: seed,
+      centerline: sampledCenterline, seed: seed,
       bendConfiguration: arcConfiguration, existingArcs: existingArcs,
-      nextArcStartDistance: nextArcStartDistance, nextArcIndex: nextArcIndex)
+      nextArcStartDistance: nextArcStartDistance, nextArcIndex: nextArcIndex,
+      timestamp: timestamp)
 
     return LightningBolt(
       id: id, seed: seed, trunk: trunk,
@@ -375,87 +495,196 @@ struct LightningTrailEngine {
   }
 
   private func makeCompanionArcs(
-    centerline: [CGPoint], trunk: LightningStroke, seed: UInt64,
+    centerline: [CGPoint], seed: UInt64,
     bendConfiguration: LightningBendConfiguration,
-    existingArcs: [LightningArc], nextArcStartDistance: CGFloat, nextArcIndex: Int
+    existingArcs: [LightningArc], nextArcStartDistance: CGFloat, nextArcIndex: Int,
+    timestamp: TimeInterval
   ) -> ([LightningArc], CGFloat, Int) {
-    guard !reduceMotion, centerline.count >= 2, trunk.points.count >= 2 else {
+    guard !reduceMotion, centerline.count >= 2 else {
       return ([], 0, 0)
     }
     let totalLength = polylineLength(centerline)
     guard totalLength >= Self.minimumSpan else { return ([], 0, 0) }
 
-    var arcs = existingArcs
-    // Only the last segment can still be partial. Rebuild it deterministically on each route
-    // extension so a large input jump crossing its endpoint still completes it exactly at the
-    // scheduled distance; once complete, the same seed produces byte-for-byte identical geometry.
-    if let lastIndex = arcs.indices.last {
-      let last = arcs[lastIndex]
-      arcs[lastIndex] = makeCompanionArc(
-        centerline: centerline, trunk: trunk, seed: seed, segmentIndex: lastIndex,
-        startDistance: last.startDistance, endDistance: last.endDistance,
-        widthScale: last.widthScale, opacity: last.opacity,
-        bendConfiguration: last.bendConfiguration)
+    var arcs: [LightningArc] = existingArcs.compactMap { arc in
+      guard !isCompanionArcExpired(arc, at: timestamp) else { return nil }
+      return updateCompanionArc(centerline: centerline, existing: arc, at: timestamp)
     }
 
     var nextStart = nextArcStartDistance
     var index = nextArcIndex
-    while totalLength + 0.000_001 >= nextStart {
+    if arcs.isEmpty, index == 0, nextStart <= 0 {
+      nextStart = nextCompanionArcGap(
+        seed: seed, index: index, bendConfiguration: bendConfiguration)
+    }
+    while totalLength > nextStart + 0.000_001 {
       var random = SplitMix64(
-        seed: seed ^ 0x6A09_E667_F3BC_C909 ^ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
-      let length = random.value(in: bendConfiguration.arcLengthMin...bendConfiguration.arcLengthMax)
-      let endDistance = nextStart + length
+        seed: seed ^ Self.companionArcScheduleSeedSalt
+          ^ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
       let widthScale = random.value(in: 0.25...0.45)
       let opacity = 0.35 + CGFloat(random.unit()) * 0.25
+      let targetLength = random.value(
+        in: bendConfiguration.arcLengthMin...bendConfiguration.arcLengthMax)
+      let holdDuration = TimeInterval(random.value(
+        in: CGFloat(bendConfiguration.arcHoldMin)...CGFloat(bendConfiguration.arcHoldMax)))
+      let id = seed ^ UInt64(index) &* Self.companionArcIDMultiplier
       arcs.append(makeCompanionArc(
-        centerline: centerline, trunk: trunk, seed: seed, segmentIndex: index,
-        startDistance: nextStart, endDistance: endDistance,
+        centerline: centerline, id: id,
+        startDistance: nextStart,
+        targetLength: targetLength, holdDuration: holdDuration,
         widthScale: widthScale, opacity: opacity,
-        bendConfiguration: bendConfiguration))
-      nextStart = endDistance + random.value(in: bendConfiguration.arcGapMin...bendConfiguration.arcGapMax)
+        bendConfiguration: bendConfiguration, timestamp: timestamp))
+      nextStart += max(
+        1, random.value(in: bendConfiguration.arcGapMin...bendConfiguration.arcGapMax))
       index += 1
     }
     return (arcs, nextStart, index)
   }
 
+  private func nextCompanionArcGap(
+    seed: UInt64, index: Int, bendConfiguration: LightningBendConfiguration
+  ) -> CGFloat {
+    var random = SplitMix64(
+      seed: seed ^ Self.companionArcScheduleSeedSalt
+        ^ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
+    return random.value(in: bendConfiguration.arcGapMin...bendConfiguration.arcGapMax)
+  }
+
   private func makeCompanionArc(
-    centerline: [CGPoint], trunk: LightningStroke, seed: UInt64,
-    segmentIndex: Int, startDistance: CGFloat, endDistance: CGFloat,
-    widthScale: CGFloat, opacity: CGFloat, bendConfiguration: LightningBendConfiguration
+    centerline: [CGPoint], id: UInt64, startDistance: CGFloat,
+    targetLength: CGFloat, holdDuration: TimeInterval,
+    widthScale: CGFloat, opacity: CGFloat, bendConfiguration: LightningBendConfiguration,
+    timestamp: TimeInterval
   ) -> LightningArc {
     let routeLength = polylineLength(centerline)
-    let clippedEnd = min(endDistance, routeLength)
-    var points = [correspondingPoint(
-      reference: centerline, target: trunk.points, atDistance: startDistance)]
-    var random = SplitMix64(
-      seed: seed ^ UInt64(segmentIndex) &* 0xD1B5_4A32_D192_ED03)
-    var cumulative: CGFloat = 0
-    if centerline.count > 2 {
-      for index in 1..<(centerline.count - 1) {
-        cumulative += distance(centerline[index - 1], centerline[index])
-        guard cumulative > startDistance, cumulative < clippedEnd else { continue }
-        let center = centerline[index]
-        let forward = subtract(centerline[index], centerline[index - 1])
-        let offset = randomOffset(
-          using: bendConfiguration, random: &random,
-          forwardAngle: atan2(forward.y, forward.x))
-        points.append(add(center, offset))
+    let endDistance = min(routeLength, startDistance + targetLength)
+    let points = companionArcPoints(
+      centerline: centerline, startDistance: startDistance, endDistance: endDistance, seed: id,
+      bendConfiguration: bendConfiguration)
+    return makeCompanionArc(
+      id: id, startDistance: startDistance, endDistance: endDistance, targetLength: targetLength,
+      points: points,
+      widthScale: widthScale, opacity: opacity, bendConfiguration: bendConfiguration,
+      holdDuration: holdDuration,
+      growthStoppedAt: endDistance + 0.000_001 >= startDistance + targetLength
+        ? timestamp : nil)
+  }
+
+  private func updateCompanionArc(
+    centerline: [CGPoint], existing: LightningArc, at timestamp: TimeInterval
+  ) -> LightningArc {
+    guard existing.continuesGrowing else { return existing }
+    let routeLength = polylineLength(centerline)
+    let targetEnd = min(routeLength, existing.startDistance + existing.targetLength)
+    guard targetEnd > existing.endDistance + 0.000_001 else {
+      if targetEnd + 0.000_001 >= existing.startDistance + existing.targetLength {
+        return makeCompanionArc(
+          id: existing.id, startDistance: existing.startDistance, endDistance: existing.endDistance,
+          targetLength: existing.targetLength, points: existing.stroke.points,
+          widthScale: existing.widthScale, opacity: existing.opacity,
+          bendConfiguration: existing.bendConfiguration, holdDuration: existing.holdDuration,
+          growthStoppedAt: timestamp)
       }
+      return existing
     }
-    points.append(correspondingPoint(
-      reference: centerline, target: trunk.points, atDistance: clippedEnd))
-    var profileRandom = SplitMix64(
-      seed: seed ^ UInt64(segmentIndex) &* 0xA24B_AED4_963E_E407)
+    let extensionPoints = companionArcPoints(
+      centerline: centerline, startDistance: existing.endDistance, endDistance: targetEnd,
+      seed: existing.id,
+      bendConfiguration: existing.bendConfiguration)
+    let points = existing.stroke.points + Array(extensionPoints.dropFirst())
+    return makeCompanionArc(
+      id: existing.id, startDistance: existing.startDistance, endDistance: targetEnd,
+      targetLength: existing.targetLength, points: points,
+      widthScale: existing.widthScale, opacity: existing.opacity,
+      bendConfiguration: existing.bendConfiguration, holdDuration: existing.holdDuration,
+      growthStoppedAt: targetEnd + 0.000_001 >= existing.startDistance + existing.targetLength
+        ? timestamp : nil)
+  }
+
+  private func makeCompanionArc(
+    id: UInt64, startDistance: CGFloat, endDistance: CGFloat, targetLength: CGFloat,
+    points: [CGPoint],
+    widthScale: CGFloat, opacity: CGFloat, bendConfiguration: LightningBendConfiguration,
+    holdDuration: TimeInterval, growthStoppedAt: TimeInterval?
+  ) -> LightningArc {
+    var profileRandom = SplitMix64(seed: id ^ Self.companionArcProfileSeedSalt)
     return LightningArc(
-      id: seed ^ UInt64(segmentIndex) &* 0x94D0_49BB_1331_11EB,
+      id: id,
       startDistance: startDistance,
       endDistance: endDistance,
+      targetLength: targetLength,
+      continuesGrowing: growthStoppedAt == nil,
+      growthStoppedAt: growthStoppedAt,
+      holdDuration: holdDuration,
       bendConfiguration: bendConfiguration,
       stroke: LightningStroke(points: points),
       segments: makeArcSegmentProfiles(
         points: points, widthScale: widthScale, random: &profileRandom),
       widthScale: widthScale,
       opacity: opacity)
+  }
+
+  private func freezingCompanionArc(_ arc: LightningArc, at timestamp: TimeInterval) -> LightningArc {
+    guard arc.continuesGrowing else { return arc }
+    return LightningArc(
+      id: arc.id,
+      startDistance: arc.startDistance,
+      endDistance: arc.endDistance,
+      targetLength: arc.targetLength,
+      continuesGrowing: false,
+      growthStoppedAt: timestamp,
+      holdDuration: arc.holdDuration,
+      bendConfiguration: arc.bendConfiguration,
+      stroke: arc.stroke,
+      segments: arc.segments,
+      widthScale: arc.widthScale,
+      opacity: arc.opacity)
+  }
+
+  private func companionArcPoints(
+    centerline: [CGPoint], startDistance: CGFloat, endDistance: CGFloat, seed: UInt64,
+    bendConfiguration: LightningBendConfiguration
+  ) -> [CGPoint] {
+    let routeLength = polylineLength(centerline)
+    let clampedStart = min(max(0, startDistance), routeLength)
+    let clampedEnd = min(max(clampedStart, endDistance), routeLength)
+    guard clampedEnd > clampedStart + 0.000_001 else { return [] }
+    var rawPoints: [(point: CGPoint, angle: CGFloat, ordinal: Int)] = []
+    var cumulative: CGFloat = 0
+
+    for index in 0..<(centerline.count - 1) {
+      let start = centerline[index]
+      let end = centerline[index + 1]
+      let span = distance(start, end)
+      guard span > 0 else { continue }
+      let angle = atan2(end.y - start.y, end.x - start.x)
+      let segmentStart = cumulative
+      let segmentEnd = cumulative + span
+      let visibleStart = max(clampedStart, segmentStart)
+      let visibleEnd = min(clampedEnd, segmentEnd)
+      if visibleEnd > visibleStart + 0.000_001 {
+        let startProgress = (visibleStart - segmentStart) / span
+        let endProgress = (visibleEnd - segmentStart) / span
+        let startPoint = add(start, multiply(subtract(end, start), startProgress))
+        let endPoint = add(start, multiply(subtract(end, start), endProgress))
+        if rawPoints.isEmpty {
+          rawPoints.append((startPoint, angle, index))
+        }
+        if distance(rawPoints.last!.point, endPoint) > 0.000_001 {
+          rawPoints.append((endPoint, angle, index))
+        }
+      }
+      cumulative += span
+    }
+
+    guard rawPoints.count >= 2 else { return [] }
+    return rawPoints.map { raw in
+      var random = SplitMix64(
+        seed: seed ^ Self.companionArcGeometrySeedSalt
+          ^ UInt64(raw.ordinal + 1) &* 0x9E37_79B9_7F4A_7C15)
+      return add(raw.point, randomOffset(
+        using: bendConfiguration, random: &random, forwardAngle: raw.angle))
+    }
   }
 
   private func makeArcSegmentProfiles(
@@ -518,11 +747,32 @@ struct LightningTrailEngine {
 
   private mutating func prune(at timestamp: TimeInterval) {
     transitionToDissipationIfNeeded(at: timestamp)
+    bolts = bolts.map { bolt in
+      let liveArcs = bolt.arcs.filter { !isCompanionArcExpired($0, at: timestamp) }
+      guard liveArcs.count != bolt.arcs.count else { return bolt }
+      return LightningBolt(
+        id: bolt.id,
+        seed: bolt.seed,
+        trunk: bolt.trunk,
+        segments: bolt.segments,
+        arcs: liveArcs,
+        nextArcStartDistance: bolt.nextArcStartDistance,
+        nextArcIndex: bolt.nextArcIndex,
+        createdAt: bolt.createdAt,
+        stoppedAt: bolt.stoppedAt,
+        glowScale: bolt.glowScale,
+        bendConfiguration: bolt.bendConfiguration)
+    }
     let boltLifetime = reduceMotion ? Self.reducedMotionLifetime : Self.standardLifetime
     bolts.removeAll { bolt in
       guard let stoppedAt = bolt.stoppedAt else { return false }
-      return timestamp - stoppedAt >= boltLifetime
+      return timestamp - stoppedAt >= boltLifetime && bolt.arcs.isEmpty
     }
+  }
+
+  private func isCompanionArcExpired(_ arc: LightningArc, at timestamp: TimeInterval) -> Bool {
+    guard let growthStoppedAt = arc.growthStoppedAt else { return false }
+    return timestamp - growthStoppedAt >= arc.holdDuration
   }
 
   private mutating func transitionToDissipationIfNeeded(at timestamp: TimeInterval) {
@@ -551,14 +801,14 @@ struct LightningTrailEngine {
       seed: active.seed,
       trunk: active.trunk,
       segments: active.segments,
-      arcs: active.arcs,
+      arcs: active.arcs.map { freezingCompanionArc($0, at: timestamp) },
       nextArcStartDistance: active.nextArcStartDistance,
       nextArcIndex: active.nextArcIndex,
       createdAt: active.createdAt,
       stoppedAt: timestamp,
       glowScale: active.glowScale,
       bendConfiguration: active.bendConfiguration)
-    bolts = [stopped]
+    bolts[activeIndex] = stopped
     if let last = samples.last { samples = [last] }
   }
 
@@ -574,7 +824,7 @@ struct LightningTrailEngine {
     }
   }
 
-  private func renderedArcs(
+  private mutating func renderedArcs(
     for bolt: LightningBolt, at timestamp: TimeInterval
   ) -> [RenderedLightningArc] {
     bolt.arcs.map { arc in
@@ -587,12 +837,53 @@ struct LightningTrailEngine {
           RenderedLightningSegment(
             start: segment.start,
             end: segment.end,
-            widthScale: segment.baseWidthScale * segmentDissipationScale(
-              for: segment, bolt: bolt, at: timestamp))
+            widthScale: segment.baseWidthScale * companionArcDissipationScale(
+              for: segment, arc: arc, at: timestamp))
         },
         widthScale: arc.widthScale,
-        opacity: arc.opacity)
+        opacity: arc.opacity,
+        visible: companionArcVisibility(for: arc, bolt: bolt, at: timestamp))
     }
+  }
+
+  private mutating func companionArcVisibility(
+    for arc: LightningArc, bolt: LightningBolt, at timestamp: TimeInterval
+  ) -> Bool {
+    var state = companionArcFlickerStates[arc.id]
+      ?? CompanionArcFlickerState(arcID: arc.id)
+    guard !reduceMotion else {
+      state.nextFlickerAt = nil
+      state.hiddenUntil = nil
+      companionArcFlickerStates[arc.id] = state
+      return true
+    }
+
+    if let hiddenUntil = state.hiddenUntil {
+      if timestamp < hiddenUntil {
+        companionArcFlickerStates[arc.id] = state
+        return false
+      }
+      state.hiddenUntil = nil
+    }
+
+    if state.nextFlickerAt == nil {
+      state.nextFlickerAt = timestamp + nextTrunkFlickerInterval(using: &state.random)
+      companionArcFlickerStates[arc.id] = state
+      return true
+    }
+    guard timestamp >= state.nextFlickerAt! else {
+      companionArcFlickerStates[arc.id] = state
+      return true
+    }
+
+    let frameRange = trunkFlickerFramesMax - trunkFlickerFramesMin
+    let hiddenFrameCount = trunkFlickerFramesMin
+      + Int(state.random.next() % UInt64(frameRange + 1))
+    state.hiddenUntil = timestamp + Double(hiddenFrameCount) * displayFrameDuration
+    state.nextFlickerAt = state.hiddenUntil!
+      + nextTrunkFlickerInterval(using: &state.random)
+    companionArcFlickerStates[arc.id] = state
+    return false
   }
 
   private func segmentDissipationScale(
@@ -607,6 +898,22 @@ struct LightningTrailEngine {
     }
     guard age > segment.dissipationDelay else { return 1 }
     let progress = min(1, max(0, (age - segment.dissipationDelay) / segment.dissipationDuration))
+    return CGFloat(pow(1 - progress, 2))
+  }
+
+  private func companionArcDissipationScale(
+    for segment: LightningSegmentProfile,
+    arc: LightningArc,
+    at timestamp: TimeInterval
+  ) -> CGFloat {
+    guard let growthStoppedAt = arc.growthStoppedAt else { return 1 }
+    let age = max(0, timestamp - growthStoppedAt)
+    guard age < arc.holdDuration else { return 0 }
+    let fadeLength = segment.dissipationDelay + segment.dissipationDuration
+    let fadeStart = max(0, arc.holdDuration - fadeLength)
+    let progress = min(
+      1,
+      max(0, (age - fadeStart - segment.dissipationDelay) / segment.dissipationDuration))
     return CGFloat(pow(1 - progress, 2))
   }
 
@@ -658,26 +965,6 @@ struct LightningTrailEngine {
 
 private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
   hypot(lhs.x - rhs.x, lhs.y - rhs.y)
-}
-
-private func correspondingPoint(
-  reference: [CGPoint], target: [CGPoint], atDistance targetDistance: CGFloat
-) -> CGPoint {
-  guard reference.count == target.count, reference.count >= 2 else {
-    return target.last ?? .zero
-  }
-  var remaining = max(0, targetDistance)
-  for index in 0..<(reference.count - 1) {
-    let referenceLength = distance(reference[index], reference[index + 1])
-    guard referenceLength > 0 else { continue }
-    if remaining <= referenceLength {
-      let progress = remaining / referenceLength
-      return add(
-        target[index], multiply(subtract(target[index + 1], target[index]), progress))
-    }
-    remaining -= referenceLength
-  }
-  return target.last ?? .zero
 }
 
 private func polylineLength(_ points: [CGPoint]) -> CGFloat {
