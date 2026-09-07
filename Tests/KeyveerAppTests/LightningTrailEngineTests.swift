@@ -533,6 +533,27 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(found)
   }
 
+  func testCompanionArcKeepsRouteEndpointsAndOffsetsInteriorPointsByPathHeading() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 10, distanceMax: 10, directionMinDegrees: 0, directionMaxDegrees: 0,
+      arcLengthMin: 100, arcLengthMax: 100,
+      arcGapMin: 24, arcGapMax: 24)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 0, y: 300), at: 0.1)
+
+    let arc = try XCTUnwrap(engine.frame(at: 0.1).bolts.first?.arcs.first)
+    XCTAssertEqual(arc.startDistance, 24, accuracy: 0.001)
+    XCTAssertEqual(arc.endDistance - arc.startDistance, 100, accuracy: 0.001)
+    XCTAssertEqual(arc.stroke.points.first, CGPoint(x: 0, y: 24))
+    XCTAssertEqual(arc.stroke.points.last, CGPoint(x: 0, y: 124))
+    XCTAssertTrue(
+      arc.stroke.points.dropFirst().dropLast().contains {
+        abs($0.x) < 0.001 && abs($0.y - 40) < 0.001
+      })
+  }
+
   func testCompanionArcsAreDeterministicAndFrozenAsTheBoltGrows() {
     var first = LightningTrailEngine(seed: 42)
     var second = LightningTrailEngine(seed: 42)

@@ -163,6 +163,12 @@ struct LightningTrailEngine {
     let point: CGPoint
   }
 
+  private struct OffsetPathPoint {
+    let point: CGPoint
+    let forwardAngle: CGFloat
+    let key: UInt64
+  }
+
   private struct SplitMix64 {
     private var state: UInt64
 
@@ -498,8 +504,6 @@ struct LightningTrailEngine {
         spacingRange: bendConfiguration.spacingMin...bendConfiguration.spacingMax,
         random: &spacingRandom)
     }
-    let anchor = sampledCenterline.first!
-    let head = sampledCenterline.last!
     var profileRandom = SplitMix64(seed: seed ^ 0xA24B_AED4_963E_E407)
     if reduceMotion {
       return LightningBolt(
@@ -513,19 +517,13 @@ struct LightningTrailEngine {
         widthConfiguration: widthConfiguration)
     }
 
-    var primaryRandom = SplitMix64(seed: seed ^ 0x9E37_79B9_7F4A_7C15)
-    var primaryBendPoints = [anchor]
-    for index in 1..<(sampledCenterline.count - 1) {
-      let center = sampledCenterline[index]
-      // Use the heading entering this anchor so an already-generated prefix does not
-      // change when later movement samples are appended.
-      let forward = subtract(sampledCenterline[index], sampledCenterline[index - 1])
-      let forwardAngle = atan2(forward.y, forward.x)
-      let offset = randomOffset(
-        using: bendConfiguration, random: &primaryRandom, forwardAngle: forwardAngle)
-      primaryBendPoints.append(add(center, offset))
-    }
-    primaryBendPoints.append(head)
+    let primaryBendPoints = offsetPathPoints(
+      sampledCenterline.enumerated().map { index, point in
+        let previous = sampledCenterline[max(0, index - 1)]
+        let forward = subtract(point, previous)
+        return OffsetPathPoint(
+          point: point, forwardAngle: atan2(forward.y, forward.x), key: UInt64(index))
+      }, configuration: bendConfiguration, seed: seed ^ 0x9E37_79B9_7F4A_7C15)
     let trunk = LightningStroke(points: primaryBendPoints)
     let (arcs, nextStart, nextIndex) = makeCompanionArcs(
       centerline: sampledCenterline, seed: seed,
@@ -703,7 +701,7 @@ struct LightningTrailEngine {
     let clampedStart = min(max(0, startDistance), routeLength)
     let clampedEnd = min(max(clampedStart, endDistance), routeLength)
     guard clampedEnd > clampedStart + 0.000_001 else { return [] }
-    var rawPoints: [(point: CGPoint, angle: CGFloat, ordinal: Int)] = []
+    var rawPoints: [OffsetPathPoint] = []
     var cumulative: CGFloat = 0
 
     for index in 0..<(centerline.count - 1) {
@@ -722,23 +720,38 @@ struct LightningTrailEngine {
         let startPoint = add(start, multiply(subtract(end, start), startProgress))
         let endPoint = add(start, multiply(subtract(end, start), endProgress))
         if rawPoints.isEmpty {
-          rawPoints.append((startPoint, angle, index))
+          rawPoints.append(
+            OffsetPathPoint(point: startPoint, forwardAngle: angle, key: UInt64(index)))
         }
         if distance(rawPoints.last!.point, endPoint) > 0.000_001 {
-          rawPoints.append((endPoint, angle, index))
+          rawPoints.append(
+            OffsetPathPoint(point: endPoint, forwardAngle: angle, key: UInt64(index + 1)))
         }
       }
       cumulative += span
     }
 
     guard rawPoints.count >= 2 else { return [] }
-    return rawPoints.map { raw in
+    return offsetPathPoints(
+      rawPoints, configuration: bendConfiguration, seed: seed ^ Self.companionArcGeometrySeedSalt)
+  }
+
+  private func offsetPathPoints(
+    _ points: [OffsetPathPoint], configuration: LightningBendConfiguration, seed: UInt64
+  ) -> [CGPoint] {
+    guard points.count >= 2 else { return points.map(\.point) }
+
+    var result = [points[0].point]
+    result.reserveCapacity(points.count)
+    for point in points.dropFirst().dropLast() {
       var random = SplitMix64(
-        seed: seed ^ Self.companionArcGeometrySeedSalt
-          ^ UInt64(raw.ordinal + 1) &* 0x9E37_79B9_7F4A_7C15)
-      return add(raw.point, randomOffset(
-        using: bendConfiguration, random: &random, forwardAngle: raw.angle))
+        seed: seed ^ point.key &* 0x9E37_79B9_7F4A_7C15)
+      let offset = randomOffset(
+        using: configuration, random: &random, forwardAngle: point.forwardAngle)
+      result.append(add(point.point, offset))
     }
+    result.append(points[points.count - 1].point)
+    return result
   }
 
   private func makeArcSegmentProfiles(
