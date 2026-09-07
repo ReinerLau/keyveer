@@ -26,7 +26,7 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(engine.frame(at: 0.1).isEmpty)
   }
 
-  func testDisablingMainTrunkOnlyHidesTheTrunk() {
+  func testDisablingMainTrunkHidesTrunkAndCompanionArcs() {
     var engine = LightningTrailEngine(seed: 11)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
@@ -37,15 +37,45 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertFalse(slowFrame.isEmpty)
     XCTAssertFalse(try! XCTUnwrap(slowFrame.bolts.first).trunkVisible)
     XCTAssertFalse(try! XCTUnwrap(slowFrame.bolts.first).arcs.isEmpty)
-    XCTAssertTrue(try! XCTUnwrap(slowFrame.bolts.first).arcs.allSatisfy(\.visible))
+    XCTAssertTrue(try! XCTUnwrap(slowFrame.bolts.first).arcs.allSatisfy { !$0.visible })
     engine.move(to: CGPoint(x: 80, y: 0), at: 0.2)
     XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
-    XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).arcs.isEmpty)
+    XCTAssertTrue(
+      try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).arcs.allSatisfy { !$0.visible })
 
     engine.setMainTrunkEnabled(true)
     let resumedFrame = engine.frame(at: 0.2)
-    XCTAssertFalse(try XCTUnwrap(resumedFrame.bolts.first).trunkVisible)
-    XCTAssertTrue(try XCTUnwrap(resumedFrame.bolts.last).trunkVisible)
+    XCTAssertTrue(resumedFrame.bolts.allSatisfy { bolt in
+      !bolt.trunkVisible && bolt.arcs.allSatisfy { !$0.visible }
+    })
+  }
+
+  func testStoppedTrailKeepsCompanionArcsHiddenWhenDefaultSpeedStops() {
+    var engine = LightningTrailEngine(seed: 11)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
+    engine.setMainTrunkEnabled(false)
+    engine.stop(at: 0.1)
+
+    let stoppedFrame = engine.frame(at: 0.1)
+    XCTAssertFalse(stoppedFrame.isEmpty)
+    XCTAssertTrue(stoppedFrame.bolts.allSatisfy { bolt in
+      !bolt.trunkVisible && bolt.arcs.allSatisfy { !$0.visible }
+    })
+  }
+
+  func testEnablingTrailAfterHiddenMovementStartsAtTheCurrentPoint() {
+    var engine = LightningTrailEngine(seed: 19)
+    engine.setMainTrunkEnabled(false)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.1)
+
+    engine.setMainTrunkEnabled(true)
+    engine.move(to: CGPoint(x: 100, y: 0), at: 0.15)
+
+    let bolt = try! XCTUnwrap(engine.frame(at: 0.15).bolts.last)
+    XCTAssertEqual(bolt.trunk.points.first, CGPoint(x: 80, y: 0))
+    XCTAssertEqual(bolt.trunk.points.last, CGPoint(x: 100, y: 0))
   }
 
   func testTrunkFlickerIsDeterministicAndLastsOneOrTwoDisplayFrames() {
@@ -417,6 +447,24 @@ final class LightningTrailEngineTests: XCTestCase {
     let extended = try! XCTUnwrap(engine.frame(at: 0.10).bolts.first)
     let frozenInitial = initialSegments.filter { max($0.start.x, $0.end.x) <= 170 }
     XCTAssertEqual(Array(extended.segments.prefix(frozenInitial.count)), frozenInitial)
+  }
+
+  func testConfiguredWidthRangesApplyIndependentlyToTrunkAndCompanionArcs() {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateWidthConfiguration(
+      trunkScaleMin: 0.70, trunkScaleMax: 0.80,
+      arcScaleMin: 0.20, arcScaleMax: 0.30)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcGapMin: 24, arcGapMax: 24)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 400, y: 0), at: 0.1)
+
+    let bolt = try! XCTUnwrap(engine.frame(at: 0.1).bolts.first)
+    XCTAssertTrue(bolt.segments.allSatisfy { (0.70...0.80).contains($0.widthScale) })
+    XCTAssertFalse(bolt.arcs.isEmpty)
+    XCTAssertTrue(bolt.arcs.allSatisfy { (0.20...0.30).contains($0.widthScale) })
   }
 
   func testTrunkDoesNotInsertAdditionalInterBendOffsets() {

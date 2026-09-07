@@ -1338,6 +1338,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(trail["bendOffsetDirectionMax"] as? Double, 90)
     XCTAssertEqual(trail["bendSpacingMin"] as? Double, 24)
     XCTAssertEqual(trail["bendSpacingMax"] as? Double, 36)
+    XCTAssertEqual(trail["trunkWidthScaleMin"] as? Double, 0.45)
+    XCTAssertEqual(trail["trunkWidthScaleMax"] as? Double, 1.6)
+    XCTAssertEqual(trail["arcWidthScaleMin"] as? Double, 0.25)
+    XCTAssertEqual(trail["arcWidthScaleMax"] as? Double, 0.45)
     XCTAssertEqual(trail["arcLengthMin"] as? Double, 80)
     XCTAssertEqual(trail["arcLengthMax"] as? Double, 180)
     XCTAssertEqual(trail["arcGapMin"] as? Double, 24)
@@ -1359,6 +1363,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(defaults.marker.glowStrength, 1.0)
     XCTAssertEqual(defaults.trail.outerGlowOpacity, 1.0)
     XCTAssertEqual(defaults.trail.glowStrength, 1.0)
+    XCTAssertEqual(defaults.trail.trunkWidthScaleMin, 0.45)
+    XCTAssertEqual(defaults.trail.trunkWidthScaleMax, 1.6)
+    XCTAssertEqual(defaults.trail.arcWidthScaleMin, 0.25)
+    XCTAssertEqual(defaults.trail.arcWidthScaleMax, 0.45)
     XCTAssertEqual(defaults.trail.trunkFlickerIntervalMin, 0.12)
     XCTAssertEqual(defaults.trail.trunkFlickerIntervalMax, 0.30)
     XCTAssertEqual(defaults.trail.trunkFlickerFramesMin, 1)
@@ -1369,6 +1377,8 @@ final class KeyveerRuntimeTests: XCTestCase {
       "marker": ["glowRadius": 14.0],
       "trail": [
         "blurRadius": 24.0, "outerGlowOpacity": 0.35, "glowStrength": 1.5,
+        "trunkWidthScaleMin": 0.6, "trunkWidthScaleMax": 1.2,
+        "arcWidthScaleMin": 0.15, "arcWidthScaleMax": 0.35,
         "arcHoldMin": 0.3, "arcHoldMax": 0.7,
         "trunkFlickerIntervalMin": 0.2, "trunkFlickerIntervalMax": 0.4,
         "trunkFlickerFramesMin": 3.0, "trunkFlickerFramesMax": 5.0,
@@ -1386,6 +1396,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(decoded.visual.trail.blurRadius, 24)
     XCTAssertEqual(decoded.visual.trail.outerGlowOpacity, 0.35)
     XCTAssertEqual(decoded.visual.trail.glowStrength, 1.5)
+    XCTAssertEqual(decoded.visual.trail.trunkWidthScaleMin, 0.6)
+    XCTAssertEqual(decoded.visual.trail.trunkWidthScaleMax, 1.2)
+    XCTAssertEqual(decoded.visual.trail.arcWidthScaleMin, 0.15)
+    XCTAssertEqual(decoded.visual.trail.arcWidthScaleMax, 0.35)
     XCTAssertEqual(decoded.visual.trail.arcHoldMin, 0.3)
     XCTAssertEqual(decoded.visual.trail.arcHoldMax, 0.7)
     XCTAssertEqual(decoded.visual.trail.trunkFlickerIntervalMin, 0.2)
@@ -1521,6 +1535,10 @@ final class KeyveerRuntimeTests: XCTestCase {
     }))
 
     for (field, value) in [
+      ("trunkWidthScaleMin", 0.049),
+      ("trunkWidthScaleMax", 4.1),
+      ("arcWidthScaleMin", 0.049),
+      ("arcWidthScaleMax", 4.1),
       ("bendSpacingMin", 11.0),
       ("bendSpacingMax", 129.0),
       ("bendOffsetDistanceMin", -1.0),
@@ -1545,6 +1563,24 @@ final class KeyveerRuntimeTests: XCTestCase {
       XCTAssertTrue(response.effects.contains(where: { effect in
         if case .configurationRejected(let reason) = effect {
           return reason.contains("visual.trail.\(field)")
+        }
+        return false
+      }))
+    }
+
+    for (minField, maxField) in [
+      ("trunkWidthScaleMin", "trunkWidthScaleMax"),
+      ("arcWidthScaleMin", "arcWidthScaleMax"),
+    ] {
+      var reversedWidth = try configurationObject()
+      reversedWidth["visual"] = [
+        "trail": [minField: 0.8, maxField: 0.2]
+      ]
+      let response = runtime.handle(
+        .configuration(try JSONSerialization.data(withJSONObject: reversedWidth)))
+      XCTAssertTrue(response.effects.contains(where: { effect in
+        if case .configurationRejected(let reason) = effect {
+          return reason.contains("visual.trail.\(minField)")
         }
         return false
       }))

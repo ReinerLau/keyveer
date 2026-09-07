@@ -55,6 +55,10 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
   },
   "trail": {
     "coreWidth": 3.5,
+    "trunkWidthScaleMin": 0.45,
+    "trunkWidthScaleMax": 1.6,
+    "arcWidthScaleMin": 0.25,
+    "arcWidthScaleMax": 0.45,
     "bendSpacingMin": 24,
     "bendSpacingMax": 36,
     "bendOffsetDistanceMin": 6,
@@ -84,19 +88,24 @@ turn left, negative angles turn right, 180° backward) and are expressed in degr
 glows use Gaussian blur controlled by `glowRadius` and `blurRadius`. Colors use `#RRGGBB`;
 numeric limits are validated during reload.
 
+`trunkWidthScaleMin` / `trunkWidthScaleMax` and `arcWidthScaleMin` / `arcWidthScaleMax` control
+the independent random width multipliers for the main trunk and companion arcs. They are applied to
+`coreWidth`, must be between `0.05` and `4`, and each minimum must not exceed its maximum. New
+segments and arcs use a changed range after reload; already generated segments retain their widths.
+
 A continuous movement grows one complete lightning trunk from its exact starting point to the
 marker. The trunk has no artificial length limit and stays fully visible until movement stops.
-During keyboard movement, the default and precision-slow speed hide the prominent trunk while
-retaining the subtle companion arc; holding any configured fast-speed key shows the trunk again.
-Physical mouse movement is not gated by these keyboard speed keys.
+During keyboard movement, the default and precision-slow speed hide the prominent trunk and its
+companion arcs; holding any configured fast-speed key shows the complete trail again. Physical
+mouse movement is not gated by these keyboard speed keys.
 For keyboard movement, releasing the final movement key triggers dissipation immediately; physical
 pointer-only movement retains the brief stationary timeout fallback.
 It then remains fixed and opaque while independently timed sections shrink and break apart in
 place for 0.45 seconds. The effect has no directional wipe, full-width branches, or flying sparks;
 its companion arcs are independent thin polylines. Each arc grows to its own randomized length,
 then remains for its own randomized hold time before disappearing. New arcs are generated at
-random path-distance gaps, and there is no simultaneous-count limit. Companion arcs can remain
-visible after the trunk has dissipated.
+random path-distance gaps, and there is no simultaneous-count limit. Companion arcs generated
+while the trail is enabled can remain visible after the trunk has dissipated.
 
 For lock-screen, sleep, permission-loss, and event-tap recovery checks, run
 `./Scripts/recovery-smoke-test.sh`. These cases require system interaction and are recorded as an

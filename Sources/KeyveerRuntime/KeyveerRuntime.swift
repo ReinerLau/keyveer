@@ -910,6 +910,10 @@ public struct MarkerVisualSettings: Codable, Equatable, Sendable {
 
 public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public var coreWidth: Double
+  public var trunkWidthScaleMin: Double
+  public var trunkWidthScaleMax: Double
+  public var arcWidthScaleMin: Double
+  public var arcWidthScaleMax: Double
   /// Randomized distance range between major bend anchors in the full-motion lightning trunk, in points.
   public var bendSpacingMin: Double
   public var bendSpacingMax: Double
@@ -937,6 +941,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
 
   public init(
     coreWidth: Double = 3.5,
+    trunkWidthScaleMin: Double = 0.45,
+    trunkWidthScaleMax: Double = 1.6,
+    arcWidthScaleMin: Double = 0.25,
+    arcWidthScaleMax: Double = 0.45,
     bendSpacingMin: Double = 24,
     bendSpacingMax: Double = 36,
     bendOffsetDistanceMin: Double = 6,
@@ -959,6 +967,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     glowStrength: Double = 1.0
   ) {
     self.coreWidth = coreWidth
+    self.trunkWidthScaleMin = trunkWidthScaleMin
+    self.trunkWidthScaleMax = trunkWidthScaleMax
+    self.arcWidthScaleMin = arcWidthScaleMin
+    self.arcWidthScaleMax = arcWidthScaleMax
     self.bendSpacingMin = bendSpacingMin
     self.bendSpacingMax = bendSpacingMax
     self.bendOffsetDistanceMin = bendOffsetDistanceMin
@@ -985,7 +997,9 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
-    case lengthMultiplier, maxLength, coreWidth, bendSpacingMin, bendSpacingMax
+    case lengthMultiplier, maxLength, coreWidth
+    case trunkWidthScaleMin, trunkWidthScaleMax, arcWidthScaleMin, arcWidthScaleMax
+    case bendSpacingMin, bendSpacingMax
     case bendOffsetDistanceMin, bendOffsetDistanceMax
     case bendOffsetDirectionMin, bendOffsetDirectionMax
     case arcLengthMin, arcLengthMax, arcGapMin, arcGapMax, arcHoldMin, arcHoldMax
@@ -1000,6 +1014,14 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
     self.init(
       coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 3.5,
+      trunkWidthScaleMin: try container.decodeIfPresent(
+        Double.self, forKey: .trunkWidthScaleMin) ?? 0.45,
+      trunkWidthScaleMax: try container.decodeIfPresent(
+        Double.self, forKey: .trunkWidthScaleMax) ?? 1.6,
+      arcWidthScaleMin: try container.decodeIfPresent(
+        Double.self, forKey: .arcWidthScaleMin) ?? 0.25,
+      arcWidthScaleMax: try container.decodeIfPresent(
+        Double.self, forKey: .arcWidthScaleMax) ?? 0.45,
       bendSpacingMin: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMin) ?? 24,
       bendSpacingMax: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMax) ?? 36,
       bendOffsetDistanceMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMin)
@@ -1038,6 +1060,10 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(coreWidth, forKey: .coreWidth)
+    try container.encode(trunkWidthScaleMin, forKey: .trunkWidthScaleMin)
+    try container.encode(trunkWidthScaleMax, forKey: .trunkWidthScaleMax)
+    try container.encode(arcWidthScaleMin, forKey: .arcWidthScaleMin)
+    try container.encode(arcWidthScaleMax, forKey: .arcWidthScaleMax)
     try container.encode(bendSpacingMin, forKey: .bendSpacingMin)
     try container.encode(bendSpacingMax, forKey: .bendSpacingMax)
     try container.encode(bendOffsetDistanceMin, forKey: .bendOffsetDistanceMin)
@@ -1070,6 +1096,22 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
       try validate(legacyMaxLength, named: "visual.trail.maxLength", range: 24...640)
     }
     try validate(coreWidth, named: "visual.trail.coreWidth", range: 0.5...12)
+    try validate(
+      trunkWidthScaleMin, named: "visual.trail.trunkWidthScaleMin", range: 0.05...4)
+    try validate(
+      trunkWidthScaleMax, named: "visual.trail.trunkWidthScaleMax", range: 0.05...4)
+    guard trunkWidthScaleMin <= trunkWidthScaleMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.trunkWidthScaleMin",
+        description: "must be less than or equal to visual.trail.trunkWidthScaleMax")
+    }
+    try validate(arcWidthScaleMin, named: "visual.trail.arcWidthScaleMin", range: 0.05...4)
+    try validate(arcWidthScaleMax, named: "visual.trail.arcWidthScaleMax", range: 0.05...4)
+    guard arcWidthScaleMin <= arcWidthScaleMax else {
+      throw ConfigurationError.invalidValue(
+        name: "visual.trail.arcWidthScaleMin",
+        description: "must be less than or equal to visual.trail.arcWidthScaleMax")
+    }
     try validate(bendSpacingMin, named: "visual.trail.bendSpacingMin", range: 12...128)
     try validate(bendSpacingMax, named: "visual.trail.bendSpacingMax", range: 12...128)
     guard bendSpacingMin <= bendSpacingMax else {

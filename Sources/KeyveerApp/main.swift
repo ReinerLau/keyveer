@@ -757,6 +757,11 @@ private final class CursorMarkerController {
       arcGapMax: CGFloat(settings.trail.arcGapMax),
       arcHoldMin: settings.trail.arcHoldMin,
       arcHoldMax: settings.trail.arcHoldMax)
+    lightning.updateWidthConfiguration(
+      trunkScaleMin: CGFloat(settings.trail.trunkWidthScaleMin),
+      trunkScaleMax: CGFloat(settings.trail.trunkWidthScaleMax),
+      arcScaleMin: CGFloat(settings.trail.arcWidthScaleMin),
+      arcScaleMax: CGFloat(settings.trail.arcWidthScaleMax))
     lightning.updateTrunkFlickerConfiguration(
       intervalMin: settings.trail.trunkFlickerIntervalMin,
       intervalMax: settings.trail.trunkFlickerIntervalMax,

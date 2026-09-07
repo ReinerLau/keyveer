@@ -134,6 +134,10 @@ func run() -> Int32 {
     guard
       let generatedVisual = generated["visual"] as? [String: Any],
       let generatedTrail = generatedVisual["trail"] as? [String: Any],
+      generatedTrail["trunkWidthScaleMin"] as? Double == 0.45,
+      generatedTrail["trunkWidthScaleMax"] as? Double == 1.6,
+      generatedTrail["arcWidthScaleMin"] as? Double == 0.25,
+      generatedTrail["arcWidthScaleMax"] as? Double == 0.45,
       generatedTrail["arcLengthMin"] as? Double == 80,
       generatedTrail["arcLengthMax"] as? Double == 180,
       generatedTrail["arcGapMin"] as? Double == 24,
@@ -163,6 +167,10 @@ func run() -> Int32 {
     visual["marker"] = marker
     var trail = visual["trail"] as? [String: Any] ?? [:]
     trail["blurRadius"] = 24.0
+    trail["trunkWidthScaleMin"] = 0.6
+    trail["trunkWidthScaleMax"] = 1.2
+    trail["arcWidthScaleMin"] = 0.15
+    trail["arcWidthScaleMax"] = 0.35
     trail["arcLengthMin"] = 90.0
     trail["arcLengthMax"] = 160.0
     trail["arcGapMin"] = 30.0

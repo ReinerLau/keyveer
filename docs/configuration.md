@@ -55,6 +55,10 @@
     },
     "trail": {
       "coreWidth": 3.5,
+      "trunkWidthScaleMin": 0.45,
+      "trunkWidthScaleMax": 1.6,
+      "arcWidthScaleMin": 0.25,
+      "arcWidthScaleMax": 0.45,
       "blurRadius": 16,
       "coreColor": "#FFFFFF",
       "outerGlowColor": "#008FEF",
@@ -124,21 +128,25 @@
 每条电弧都有独立的随机长度和停留时间，达到长度或主干停止后停止增长，停留时间从停止增长时开始计算，
 到期后单独消失；电弧数量不设上限，也不因主干消失而提前移除。
 
-键盘控制时，默认速度和精确慢速（`precision`）隐藏醒目的主干，但保留细弱伴随电弧；按住任一速度键
-（`speedOne` / `speedTwo` / `speedThree`）后重新显示主干。物理鼠标移动不受此速度档位限制。
-主干和每条伴随电弧分别以约 120–300ms 的独立随机间隔短暂隐藏 1–2 个显示帧，彼此不要求同步。
+键盘控制时，默认速度和精确慢速（`precision`）同时隐藏醒目的主干和伴随电弧；按住任一速度键
+（`speedOne` / `speedTwo` / `speedThree`）后重新显示完整轨迹。物理鼠标移动不受此速度档位限制。
+完整轨迹可见时，主干和每条伴随电弧分别以约 120–300ms 的独立随机间隔短暂隐藏 1–2 个显示帧，彼此不要求同步。
 停止移动后的消散阶段、以及 macOS 开启 Reduce Motion 时不会新增此类闪烁。
 上述间隔和隐藏帧数可通过下方 `trunkFlicker*` 配置项调整。
 
-`coreWidth` 是白芯的基准宽度。每个局部段生成时会取得固定的随机倍率，实际宽度为
-`coreWidth × 0.45...1.6`；随机范围与轨迹位置无关，生成后不会继续变化。闪电折点也使用
+`coreWidth` 是白芯的基准宽度。主干每个局部段生成时会在
+`trunkWidthScaleMin...trunkWidthScaleMax` 中取得固定的随机倍率，伴随电弧则使用
+`arcWidthScaleMin...arcWidthScaleMax`；实际宽度分别为 `coreWidth × 对应倍率`。随机范围与
+轨迹位置无关，生成后不会继续变化。闪电折点也使用
 位置无关的二维随机偏移：方向和距离都独立随机，但折点仍以移动路线上的采样点为中心，起点和终点不偏移。
 方向范围使用相对当前路径前进方向的角度配置（0° 沿路径向前、正角度向路径左侧、负角度向路径右侧、
 180° 向后），支持 `-360...360`；距离使用 pt 配置。Reload 后新生成的闪电使用新范围，已经存在的闪电保持原有几何。
 
 | 字段 | 默认值 | 含义 |
 | --- | ---: | --- |
-| `coreWidth` | `3.5` | 白芯基准宽度（pt）；局部实际宽度为该值的 `0.45...1.6` 倍 |
+| `coreWidth` | `3.5` | 白芯基准宽度（pt） |
+| `trunkWidthScaleMin` / `trunkWidthScaleMax` | `0.45` / `1.6` | 主干局部宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
+| `arcWidthScaleMin` / `arcWidthScaleMax` | `0.25` / `0.45` | 伴随电弧宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
 | `bendSpacingMin` / `bendSpacingMax` | `24` / `36` | 主折点间距的随机范围（pt）；整体值越大折点越稀疏，越小越密集 |
 | `bendOffsetDistanceMin` / `bendOffsetDistanceMax` | `6` / `24` | 主折点随机偏移距离范围（pt） |
 | `bendOffsetDirectionMin` / `bendOffsetDirectionMax` | `-90` / `90` | 相对路径前进方向的随机偏移角度范围（度）；正角度向左、负角度向右；默认限制在前方半圆 |
