@@ -46,36 +46,36 @@ For a field-by-field explanation of all bindings, movement, scrolling, and visua
 ```json
 "visual": {
   "marker": {
-    "coreDiameter": 7,
-    "glowRadius": 9,
+    "coreDiameter": 12,
+    "glowRadius": 3,
     "coreColor": "#FFFFFF",
-    "outerGlowColor": "#008FEF",
-    "outerGlowOpacity": 0.60,
+    "outerGlowColor": "#F1DD20",
+    "outerGlowOpacity": 1,
     "glowStrength": 1.0
   },
   "trail": {
-    "coreWidth": 3.5,
-    "trunkWidthScaleMin": 0.45,
-    "trunkWidthScaleMax": 1.6,
+    "coreWidth": 5,
+    "trunkWidthScaleMin": 0.1,
+    "trunkWidthScaleMax": 2,
     "arcWidthScaleMin": 0.25,
-    "arcWidthScaleMax": 0.45,
-    "bendSpacingMin": 24,
-    "bendSpacingMax": 36,
+    "arcWidthScaleMax": 0.8,
+    "bendSpacingMin": 30,
+    "bendSpacingMax": 100,
     "bendOffsetDistanceMin": 6,
-    "bendOffsetDistanceMax": 24,
+    "bendOffsetDistanceMax": 50,
     "bendOffsetDirectionMin": -90,
     "bendOffsetDirectionMax": 90,
-    "arcLengthMin": 80,
-    "arcLengthMax": 180,
-    "arcGapMin": 24,
-    "arcGapMax": 72,
+    "arcLengthMin": 300,
+    "arcLengthMax": 500,
+    "arcGapMin": 200,
+    "arcGapMax": 300,
     "arcHoldMin": 0.20,
-    "arcHoldMax": 0.50,
-    "blurRadius": 16,
+    "arcHoldMax": 1,
+    "blurRadius": 6,
     "coreColor": "#FFFFFF",
-    "outerGlowColor": "#008FEF",
-    "outerGlowOpacity": 1.0,
-    "glowStrength": 1.0
+    "outerGlowColor": "#F1DD20",
+    "outerGlowOpacity": 1,
+    "glowStrength": 3
   }
 }
 ```

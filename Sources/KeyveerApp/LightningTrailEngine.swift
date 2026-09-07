@@ -49,18 +49,18 @@ struct LightningBendConfiguration: Equatable {
   let arcHoldMax: TimeInterval
 
   static let `default` = LightningBendConfiguration(
-    spacingMin: 24,
-    spacingMax: 36,
+    spacingMin: 30,
+    spacingMax: 100,
     offsetDistanceMin: 6,
-    offsetDistanceMax: 24,
+    offsetDistanceMax: 50,
     offsetDirectionMinRadians: -.pi / 2,
     offsetDirectionMaxRadians: .pi / 2,
-    arcLengthMin: 80,
-    arcLengthMax: 180,
-    arcGapMin: 24,
-    arcGapMax: 72,
+    arcLengthMin: 300,
+    arcLengthMax: 500,
+    arcGapMin: 200,
+    arcGapMax: 300,
     arcHoldMin: 0.20,
-    arcHoldMax: 0.50)
+    arcHoldMax: 1)
 }
 
 fileprivate struct LightningWidthConfiguration: Equatable {
@@ -70,8 +70,8 @@ fileprivate struct LightningWidthConfiguration: Equatable {
   let arcScaleMax: CGFloat
 
   static let `default` = LightningWidthConfiguration(
-    trunkScaleMin: 0.45, trunkScaleMax: 1.6,
-    arcScaleMin: 0.25, arcScaleMax: 0.45)
+    trunkScaleMin: 0.1, trunkScaleMax: 2,
+    arcScaleMin: 0.25, arcScaleMax: 0.8)
 }
 
 struct LightningBolt: Equatable {
@@ -300,12 +300,12 @@ struct LightningTrailEngine {
     distanceMax: CGFloat,
     directionMinDegrees: CGFloat,
     directionMaxDegrees: CGFloat,
-    arcLengthMin: CGFloat = 80,
-    arcLengthMax: CGFloat = 180,
-    arcGapMin: CGFloat = 24,
-    arcGapMax: CGFloat = 72,
+    arcLengthMin: CGFloat = 300,
+    arcLengthMax: CGFloat = 500,
+    arcGapMin: CGFloat = 200,
+    arcGapMax: CGFloat = 300,
     arcHoldMin: TimeInterval = 0.20,
-    arcHoldMax: TimeInterval = 0.50
+    arcHoldMax: TimeInterval = 1
   ) {
     bendConfiguration = LightningBendConfiguration(
       spacingMin: spacingMin,

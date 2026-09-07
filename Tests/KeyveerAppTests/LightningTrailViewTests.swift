@@ -21,7 +21,9 @@ final class LightningTrailViewTests: XCTestCase {
             alpha: 1,
             glowScale: 1)
         ]),
-      canvasOrigin: .zero)
+      canvasOrigin: .zero,
+      visualSettings: TrailVisualSettings(
+        coreWidth: 3.5, blurRadius: 16, outerGlowColor: "#008FEF", glowStrength: 1))
 
     let bitmap = try XCTUnwrap(
       NSBitmapImageRep(

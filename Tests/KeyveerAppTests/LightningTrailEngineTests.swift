@@ -28,6 +28,10 @@ final class LightningTrailEngineTests: XCTestCase {
 
   func testDisablingMainTrunkHidesTrunkAndCompanionArcs() {
     var engine = LightningTrailEngine(seed: 11)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 30, spacingMax: 30,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
+      arcGapMin: 24, arcGapMax: 24)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
     XCTAssertFalse(engine.frame(at: 0.1).isEmpty)
@@ -154,7 +158,8 @@ final class LightningTrailEngineTests: XCTestCase {
       engine.updateBendOffsetConfiguration(
         spacingMin: 30, spacingMax: 30,
         distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90,
-        arcGapMin: 24, arcGapMax: 24)
+        arcLengthMin: 80, arcLengthMax: 180, arcGapMin: 24, arcGapMax: 24,
+        arcHoldMin: 0.20, arcHoldMax: 0.50)
       engine.updateTrunkFlickerConfiguration(
         intervalMin: 0.01, intervalMax: 0.01, framesMin: 1, framesMax: 1)
       engine.move(to: CGPoint(x: 0, y: 0), at: 0)
@@ -268,6 +273,12 @@ final class LightningTrailEngineTests: XCTestCase {
   func testBoltGeometryIsDeterministicAndFrozen() {
     var first = LightningTrailEngine(seed: 42)
     var second = LightningTrailEngine(seed: 42)
+    first.updateBendOffsetConfiguration(
+      spacingMin: 24, spacingMax: 36,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90)
+    second.updateBendOffsetConfiguration(
+      spacingMin: 24, spacingMax: 36,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90)
     for point in [CGPoint(x: 0, y: 0), CGPoint(x: 60, y: 0)] {
       let time = point.x == 0 ? 0 : 0.1
       first.move(to: point, at: time)
@@ -434,6 +445,12 @@ final class LightningTrailEngineTests: XCTestCase {
 
   func testTrunkSegmentsKeepPositionIndependentRandomWidthsWhenTheBoltGrows() {
     var engine = LightningTrailEngine(seed: 42)
+    engine.updateWidthConfiguration(
+      trunkScaleMin: 0.45, trunkScaleMax: 1.6,
+      arcScaleMin: 0.25, arcScaleMax: 0.45)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 24, spacingMax: 36,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 200, y: 0), at: 0.05)
     let initial = try! XCTUnwrap(engine.frame(at: 0.05).bolts.first)
@@ -469,6 +486,9 @@ final class LightningTrailEngineTests: XCTestCase {
 
   func testTrunkDoesNotInsertAdditionalInterBendOffsets() {
     var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 24, spacingMax: 36,
+      distanceMin: 6, distanceMax: 24, directionMinDegrees: -90, directionMaxDegrees: 90)
     engine.move(to: CGPoint(x: 0, y: 0), at: 0)
     engine.move(to: CGPoint(x: 200, y: 0), at: 0.1)
 

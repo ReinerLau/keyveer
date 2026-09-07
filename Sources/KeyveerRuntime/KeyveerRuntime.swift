@@ -853,9 +853,9 @@ public struct MarkerVisualSettings: Codable, Equatable, Sendable {
   public var diameter: Double { max(coreDiameter, glowRadius * 2) }
 
   public init(
-    coreDiameter: Double = 7, glowRadius: Double = 9,
+    coreDiameter: Double = 12, glowRadius: Double = 3,
     coreColor: String = "#FFFFFF",
-    outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 0.60,
+    outerGlowColor: String = "#F1DD20", outerGlowOpacity: Double = 1,
     glowStrength: Double = 1.0
   ) {
     self.coreDiameter = coreDiameter
@@ -877,13 +877,13 @@ public struct MarkerVisualSettings: Codable, Equatable, Sendable {
     // `diameter` was previously configurable; accept it for compatibility but derive it now.
     _ = try container.decodeIfPresent(Double.self, forKey: .diameter)
     self.init(
-      coreDiameter: try container.decodeIfPresent(Double.self, forKey: .coreDiameter) ?? 7,
-      glowRadius: try container.decodeIfPresent(Double.self, forKey: .glowRadius) ?? 9,
+      coreDiameter: try container.decodeIfPresent(Double.self, forKey: .coreDiameter) ?? 12,
+      glowRadius: try container.decodeIfPresent(Double.self, forKey: .glowRadius) ?? 3,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
-        ?? "#008FEF",
+        ?? "#F1DD20",
       outerGlowOpacity: try container.decodeIfPresent(Double.self, forKey: .outerGlowOpacity)
-        ?? 0.60,
+        ?? 1,
       glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 1.0)
   }
 
@@ -940,31 +940,31 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
   private var legacyMaxLength: Double?
 
   public init(
-    coreWidth: Double = 3.5,
-    trunkWidthScaleMin: Double = 0.45,
-    trunkWidthScaleMax: Double = 1.6,
+    coreWidth: Double = 5,
+    trunkWidthScaleMin: Double = 0.1,
+    trunkWidthScaleMax: Double = 2,
     arcWidthScaleMin: Double = 0.25,
-    arcWidthScaleMax: Double = 0.45,
-    bendSpacingMin: Double = 24,
-    bendSpacingMax: Double = 36,
+    arcWidthScaleMax: Double = 0.8,
+    bendSpacingMin: Double = 30,
+    bendSpacingMax: Double = 100,
     bendOffsetDistanceMin: Double = 6,
-    bendOffsetDistanceMax: Double = 24,
+    bendOffsetDistanceMax: Double = 50,
     bendOffsetDirectionMin: Double = -90,
     bendOffsetDirectionMax: Double = 90,
-    arcLengthMin: Double = 80,
-    arcLengthMax: Double = 180,
-    arcGapMin: Double = 24,
-    arcGapMax: Double = 72,
+    arcLengthMin: Double = 300,
+    arcLengthMax: Double = 500,
+    arcGapMin: Double = 200,
+    arcGapMax: Double = 300,
     arcHoldMin: Double = 0.20,
-    arcHoldMax: Double = 0.50,
+    arcHoldMax: Double = 1,
     trunkFlickerIntervalMin: Double = 0.12,
     trunkFlickerIntervalMax: Double = 0.30,
     trunkFlickerFramesMin: Double = 1,
     trunkFlickerFramesMax: Double = 2,
-    blurRadius: Double = 16,
+    blurRadius: Double = 6,
     coreColor: String = "#FFFFFF",
-    outerGlowColor: String = "#008FEF", outerGlowOpacity: Double = 1.0,
-    glowStrength: Double = 1.0
+    outerGlowColor: String = "#F1DD20", outerGlowOpacity: Double = 1,
+    glowStrength: Double = 3
   ) {
     self.coreWidth = coreWidth
     self.trunkWidthScaleMin = trunkWidthScaleMin
@@ -1013,31 +1013,31 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     try rejectUnknownKeys(decoder, allowed: CodingKeys.allCases.map(\.stringValue))
     self.init(
-      coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 3.5,
+      coreWidth: try container.decodeIfPresent(Double.self, forKey: .coreWidth) ?? 5,
       trunkWidthScaleMin: try container.decodeIfPresent(
-        Double.self, forKey: .trunkWidthScaleMin) ?? 0.45,
+        Double.self, forKey: .trunkWidthScaleMin) ?? 0.1,
       trunkWidthScaleMax: try container.decodeIfPresent(
-        Double.self, forKey: .trunkWidthScaleMax) ?? 1.6,
+        Double.self, forKey: .trunkWidthScaleMax) ?? 2,
       arcWidthScaleMin: try container.decodeIfPresent(
         Double.self, forKey: .arcWidthScaleMin) ?? 0.25,
       arcWidthScaleMax: try container.decodeIfPresent(
-        Double.self, forKey: .arcWidthScaleMax) ?? 0.45,
-      bendSpacingMin: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMin) ?? 24,
-      bendSpacingMax: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMax) ?? 36,
+        Double.self, forKey: .arcWidthScaleMax) ?? 0.8,
+      bendSpacingMin: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMin) ?? 30,
+      bendSpacingMax: try container.decodeIfPresent(Double.self, forKey: .bendSpacingMax) ?? 100,
       bendOffsetDistanceMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMin)
         ?? 6,
       bendOffsetDistanceMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDistanceMax)
-        ?? 24,
+        ?? 50,
       bendOffsetDirectionMin: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMin)
         ?? -90,
       bendOffsetDirectionMax: try container.decodeIfPresent(Double.self, forKey: .bendOffsetDirectionMax)
         ?? 90,
-      arcLengthMin: try container.decodeIfPresent(Double.self, forKey: .arcLengthMin) ?? 80,
-      arcLengthMax: try container.decodeIfPresent(Double.self, forKey: .arcLengthMax) ?? 180,
-      arcGapMin: try container.decodeIfPresent(Double.self, forKey: .arcGapMin) ?? 24,
-      arcGapMax: try container.decodeIfPresent(Double.self, forKey: .arcGapMax) ?? 72,
+      arcLengthMin: try container.decodeIfPresent(Double.self, forKey: .arcLengthMin) ?? 300,
+      arcLengthMax: try container.decodeIfPresent(Double.self, forKey: .arcLengthMax) ?? 500,
+      arcGapMin: try container.decodeIfPresent(Double.self, forKey: .arcGapMin) ?? 200,
+      arcGapMax: try container.decodeIfPresent(Double.self, forKey: .arcGapMax) ?? 300,
       arcHoldMin: try container.decodeIfPresent(Double.self, forKey: .arcHoldMin) ?? 0.20,
-      arcHoldMax: try container.decodeIfPresent(Double.self, forKey: .arcHoldMax) ?? 0.50,
+      arcHoldMax: try container.decodeIfPresent(Double.self, forKey: .arcHoldMax) ?? 1,
       trunkFlickerIntervalMin: try container.decodeIfPresent(
         Double.self, forKey: .trunkFlickerIntervalMin) ?? 0.12,
       trunkFlickerIntervalMax: try container.decodeIfPresent(
@@ -1046,13 +1046,13 @@ public struct TrailVisualSettings: Codable, Equatable, Sendable {
         Double.self, forKey: .trunkFlickerFramesMin) ?? 1,
       trunkFlickerFramesMax: try container.decodeIfPresent(
         Double.self, forKey: .trunkFlickerFramesMax) ?? 2,
-      blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 16,
+      blurRadius: try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 6,
       coreColor: try container.decodeIfPresent(String.self, forKey: .coreColor) ?? "#FFFFFF",
       outerGlowColor: try container.decodeIfPresent(String.self, forKey: .outerGlowColor)
-        ?? "#008FEF",
+        ?? "#F1DD20",
       outerGlowOpacity: try container.decodeIfPresent(Double.self, forKey: .outerGlowOpacity)
         ?? 1.0,
-      glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 1.0)
+      glowStrength: try container.decodeIfPresent(Double.self, forKey: .glowStrength) ?? 3)
     legacyLengthMultiplier = try container.decodeIfPresent(Double.self, forKey: .lengthMultiplier)
     legacyMaxLength = try container.decodeIfPresent(Double.self, forKey: .maxLength)
   }

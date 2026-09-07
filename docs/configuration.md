@@ -46,24 +46,36 @@
   "optionTapMilliseconds": 250,
   "visual": {
     "marker": {
-      "coreDiameter": 7,
-      "glowRadius": 9,
+      "coreDiameter": 12,
+      "glowRadius": 3,
       "coreColor": "#FFFFFF",
-      "outerGlowColor": "#008FEF",
-      "outerGlowOpacity": 0.60,
+      "outerGlowColor": "#F1DD20",
+      "outerGlowOpacity": 1,
       "glowStrength": 1.0
     },
     "trail": {
-      "coreWidth": 3.5,
-      "trunkWidthScaleMin": 0.45,
-      "trunkWidthScaleMax": 1.6,
+      "coreWidth": 5,
+      "trunkWidthScaleMin": 0.1,
+      "trunkWidthScaleMax": 2,
       "arcWidthScaleMin": 0.25,
-      "arcWidthScaleMax": 0.45,
-      "blurRadius": 16,
+      "arcWidthScaleMax": 0.8,
+      "bendSpacingMin": 30,
+      "bendSpacingMax": 100,
+      "bendOffsetDistanceMin": 6,
+      "bendOffsetDistanceMax": 50,
+      "bendOffsetDirectionMin": -90,
+      "bendOffsetDirectionMax": 90,
+      "arcLengthMin": 300,
+      "arcLengthMax": 500,
+      "arcGapMin": 200,
+      "arcGapMax": 300,
+      "arcHoldMin": 0.20,
+      "arcHoldMax": 1,
+      "blurRadius": 6,
       "coreColor": "#FFFFFF",
-      "outerGlowColor": "#008FEF",
-      "outerGlowOpacity": 1.0,
-      "glowStrength": 1.0,
+      "outerGlowColor": "#F1DD20",
+      "outerGlowOpacity": 1,
+      "glowStrength": 3,
       "trunkFlickerIntervalMin": 0.12,
       "trunkFlickerIntervalMax": 0.30,
       "trunkFlickerFramesMin": 1,
@@ -109,11 +121,11 @@
 
 | 字段 | 默认值 | 含义 |
 | --- | ---: | --- |
-| `coreDiameter` | `7` | 白芯直径（pt） |
-| `glowRadius` | `9` | 外层辉光的高斯模糊半径（pt）；数值越大，扩散越宽 |
+| `coreDiameter` | `12` | 白芯直径（pt） |
+| `glowRadius` | `3` | 外层辉光的高斯模糊半径（pt）；数值越大，扩散越宽 |
 | `coreColor` | `#FFFFFF` | 白芯颜色 |
-| `outerGlowColor` | `#008FEF` | 外层蓝色辉光及模糊扩散 |
-| `outerGlowOpacity` | `0.60` | 外层辉光透明度（`0` 到 `1`） |
+| `outerGlowColor` | `#F1DD20` | 外层黄色辉光及模糊扩散 |
+| `outerGlowOpacity` | `1` | 外层辉光透明度（`0` 到 `1`） |
 | `glowStrength` | `1` | 高斯辉光叠加强度（`0` 到 `3`）；不改变扩散半径 |
 
 ### `visual.trail`：闪电轨迹
@@ -144,21 +156,21 @@
 
 | 字段 | 默认值 | 含义 |
 | --- | ---: | --- |
-| `coreWidth` | `3.5` | 白芯基准宽度（pt） |
-| `trunkWidthScaleMin` / `trunkWidthScaleMax` | `0.45` / `1.6` | 主干局部宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
-| `arcWidthScaleMin` / `arcWidthScaleMax` | `0.25` / `0.45` | 伴随电弧宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
-| `bendSpacingMin` / `bendSpacingMax` | `24` / `36` | 主折点间距的随机范围（pt）；整体值越大折点越稀疏，越小越密集 |
-| `bendOffsetDistanceMin` / `bendOffsetDistanceMax` | `6` / `24` | 主折点随机偏移距离范围（pt） |
+| `coreWidth` | `5` | 白芯基准宽度（pt） |
+| `trunkWidthScaleMin` / `trunkWidthScaleMax` | `0.1` / `2` | 主干局部宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
+| `arcWidthScaleMin` / `arcWidthScaleMax` | `0.25` / `0.8` | 伴随电弧宽度随机倍率范围；实际宽度为 `coreWidth × 倍率` |
+| `bendSpacingMin` / `bendSpacingMax` | `30` / `100` | 主折点间距的随机范围（pt）；整体值越大折点越稀疏，越小越密集 |
+| `bendOffsetDistanceMin` / `bendOffsetDistanceMax` | `6` / `50` | 主折点随机偏移距离范围（pt） |
 | `bendOffsetDirectionMin` / `bendOffsetDirectionMax` | `-90` / `90` | 相对路径前进方向的随机偏移角度范围（度）；正角度向左、负角度向右；默认限制在前方半圆 |
-| `arcLengthMin` / `arcLengthMax` | `80` / `180` | 每条伴随电弧独立抽取的生长长度范围（pt） |
-| `arcGapMin` / `arcGapMax` | `24` / `72` | 新伴随电弧随机生成的路径距离间隔范围（pt） |
-| `arcHoldMin` / `arcHoldMax` | `0.20` / `0.50` | 电弧停止增长后的随机停留时间范围（秒） |
+| `arcLengthMin` / `arcLengthMax` | `300` / `500` | 每条伴随电弧独立抽取的生长长度范围（pt） |
+| `arcGapMin` / `arcGapMax` | `200` / `300` | 新伴随电弧随机生成的路径距离间隔范围（pt） |
+| `arcHoldMin` / `arcHoldMax` | `0.20` / `1` | 电弧停止增长后的随机停留时间范围（秒） |
 | `trunkFlickerIntervalMin` / `trunkFlickerIntervalMax` | `0.12` / `0.30` | 主干随机隐藏节点之间的间隔范围（秒） |
 | `trunkFlickerFramesMin` / `trunkFlickerFramesMax` | `1` / `2` | 每次主干隐藏的显示帧数范围；必须为整数 |
-| `blurRadius` | `16` | 轨迹外层高斯模糊半径（pt） |
-| `coreColor` / `outerGlowColor` | `#FFFFFF` / `#008FEF` | 白芯与外层辉光颜色 |
+| `blurRadius` | `6` | 轨迹外层高斯模糊半径（pt） |
+| `coreColor` / `outerGlowColor` | `#FFFFFF` / `#F1DD20` | 白芯与外层辉光颜色 |
 | `outerGlowOpacity` | `1` | 外层辉光透明度（`0` 到 `1`） |
-| `glowStrength` | `1` | 高斯辉光叠加强度（`0` 到 `3`）；不改变扩散半径 |
+| `glowStrength` | `3` | 高斯辉光叠加强度（`0` 到 `3`）；不改变扩散半径 |
 
 颜色固定使用 `#RRGGBB`。视觉数值和宽度关系会在 Reload 时校验；非法配置会被拒绝，并继续使用上一份有效配置。
 
