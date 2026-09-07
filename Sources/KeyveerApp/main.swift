@@ -11,6 +11,21 @@ private let synthesizedEventMarker: Int64 = 0x4B45_5956_4545_5200
 private let logger = Logger(subsystem: "com.reinerlau.keyveer", category: "runtime")
 private let multiClickPointTolerance: CGFloat = 2
 
+struct ConfigurationFileSupport {
+  static func url(fileManager: FileManager = .default) -> URL {
+    fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Keyveer", isDirectory: true)
+      .appendingPathComponent("config.json")
+  }
+
+  static func ensureExists(at url: URL, fileManager: FileManager = .default) throws {
+    guard !fileManager.fileExists(atPath: url.path) else { return }
+    try fileManager.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try RuntimeConfiguration.defaultJSON.write(to: url, options: .atomic)
+  }
+}
+
 private func primaryScreenTop() -> CGFloat {
   CGDisplayBounds(CGMainDisplayID()).maxY
 }
@@ -488,10 +503,12 @@ final class LightningTrailView: NSView {
 
       for bolt in drawingState.frame.bolts {
         guard let paths = pathCache[bolt.id] else { continue }
-        draw(
-          paths.trunk, renderedSegments: bolt.segments,
-          alpha: bolt.alpha, glowScale: bolt.glowScale,
-          visualSettings: drawingState.visualSettings)
+        if bolt.trunkVisible {
+          draw(
+            paths.trunk, renderedSegments: bolt.segments,
+            alpha: bolt.alpha, glowScale: bolt.glowScale,
+            visualSettings: drawingState.visualSettings)
+        }
         for arc in bolt.arcs {
           guard let arcPaths = paths.arcs[arc.id] else { continue }
           draw(
@@ -757,8 +774,26 @@ private final class CursorMarkerController {
   func move(to point: Point) {
     let now = CACurrentMediaTime()
     lastPoint = point
-    if isShown { lightning.move(to: markerCenter(for: point), at: now) }
+    if isShown {
+      lightning.setMainTrunkEnabled(true)
+      lightning.move(to: markerCenter(for: point), at: now)
+    }
     render(at: now)
+  }
+
+  func moveKeyboard(to point: Point, mainTrunkEnabled: Bool) {
+    let now = CACurrentMediaTime()
+    lastPoint = point
+    if isShown {
+      lightning.setMainTrunkEnabled(mainTrunkEnabled)
+      lightning.move(to: markerCenter(for: point), at: now)
+    }
+    render(at: now)
+  }
+
+  func setMainTrunkEnabled(_ enabled: Bool) {
+    lightning.setMainTrunkEnabled(enabled)
+    render(at: CACurrentMediaTime())
   }
 
   func stopTrail() {
@@ -776,6 +811,7 @@ private final class CursorMarkerController {
     let now = CACurrentMediaTime()
     lastPoint = point
     if isShown {
+      lightning.setMainTrunkEnabled(true)
       lightning.resumeMovement()
       lightning.move(to: markerCenter(for: point), at: now)
     }
@@ -1077,6 +1113,7 @@ private final class KeyveerApplicationController: NSObject {
     menu.addItem(menuItem("Request Permissions", #selector(requestPermissions)))
     menu.addItem(menuItem("Open System Settings", #selector(openSystemSettings)))
     menu.addItem(menuItem("Recheck Permissions", #selector(recheckPermissions)))
+    menu.addItem(menuItem("Show Configuration in Finder", #selector(showConfigurationInFinder)))
     let reload = menuItem("Reload Configuration", #selector(reloadConfigurationFromMenu))
     menu.addItem(reload)
     reloadMenuItem = reload
@@ -1275,7 +1312,7 @@ private final class KeyveerApplicationController: NSObject {
     let uiEffects = response.effects.filter { effect in
       switch effect {
       case .capabilitiesChanged, .freeModeStatusChanged, .modeChanged, .movementBegan,
-        .movementEnded, .pointerMoved,
+        .movementEnded, .movementSpeedChanged, .pointerMoved,
         .configurationAccepted, .pointerPositionChanged, .configurationRejected,
         .eventTapShouldBeReenabled, .diagnostic:
         return true
@@ -1318,7 +1355,11 @@ private final class KeyveerApplicationController: NSObject {
         cursorMarker.stopTrail()
       case .movementBegan:
         cursorMarker.resumeTrail()
-      case .pointerMoved(to: let point, buttons: _): cursorMarker.move(to: point)
+        cursorMarker.setMainTrunkEnabled(currentLightningTrunkEnabled())
+      case .movementSpeedChanged(let isFast):
+        cursorMarker.setMainTrunkEnabled(isFast)
+      case .pointerMoved(to: let point, buttons: _):
+        cursorMarker.moveKeyboard(to: point, mainTrunkEnabled: currentLightningTrunkEnabled())
       case .pointerPositionChanged(to: let point): cursorMarker.movePhysical(to: point)
       case .configurationAccepted:
         configurationValid = true
@@ -1348,6 +1389,12 @@ private final class KeyveerApplicationController: NSObject {
       default: break
       }
     }
+  }
+
+  private func currentLightningTrunkEnabled() -> Bool {
+    runtimeLock.lock()
+    defer { runtimeLock.unlock() }
+    return runtime.shouldRenderLightningTrunk
   }
 
   @objc private func frame(_ link: CADisplayLink) {
@@ -1384,15 +1431,29 @@ private final class KeyveerApplicationController: NSObject {
   }
   @objc private func recheckPermissions() { checkPermissions(prompt: false) }
   @objc private func reloadConfigurationFromMenu() { reloadConfiguration(createIfMissing: false) }
+  @objc private func showConfigurationInFinder() {
+    let url = configurationURL()
+    do {
+      try ConfigurationFileSupport.ensureExists(at: url)
+      NSWorkspace.shared.activateFileViewerSelecting([url])
+    } catch {
+      let alert = NSAlert()
+      alert.messageText = "Could Not Show Configuration"
+      alert.informativeText =
+        "Keyveer could not create or open its configuration file: \(error.localizedDescription)"
+      alert.alertStyle = .warning
+      alert.addButton(withTitle: "OK")
+      NSApp.activate(ignoringOtherApps: true)
+      alert.runModal()
+      logger.error(
+        "Could not show configuration in Finder: \(error.localizedDescription, privacy: .public)")
+    }
+  }
 
   private func reloadConfiguration(createIfMissing: Bool) {
     let url = configurationURL()
     do {
-      if !FileManager.default.fileExists(atPath: url.path), createIfMissing {
-        try FileManager.default.createDirectory(
-          at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try RuntimeConfiguration.defaultJSON.write(to: url, options: .atomic)
-      }
+      if createIfMissing { try ConfigurationFileSupport.ensureExists(at: url) }
       let data = try Data(contentsOf: url)
       let decoded = try? JSONDecoder().decode(RuntimeConfiguration.self, from: data).validated()
       let response = runtimeResponse(for: .configuration(data))
@@ -1420,8 +1481,7 @@ private final class KeyveerApplicationController: NSObject {
   }
 
   private func configurationURL() -> URL {
-    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("Keyveer", isDirectory: true).appendingPathComponent("config.json")
+    ConfigurationFileSupport.url()
   }
 
   private func currentBindingReference() -> BindingReference {

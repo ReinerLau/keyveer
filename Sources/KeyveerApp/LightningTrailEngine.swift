@@ -72,6 +72,7 @@ struct LightningBolt: Equatable {
 struct RenderedLightningBolt: Equatable {
   let id: UInt64
   let trunk: LightningStroke
+  let trunkVisible: Bool
   let segments: [RenderedLightningSegment]
   let arcs: [RenderedLightningArc]
   let alpha: CGFloat
@@ -80,6 +81,7 @@ struct RenderedLightningBolt: Equatable {
   init(
     id: UInt64,
     trunk: LightningStroke,
+    trunkVisible: Bool = true,
     segments: [RenderedLightningSegment]? = nil,
     arcs: [RenderedLightningArc] = [],
     alpha: CGFloat,
@@ -87,6 +89,7 @@ struct RenderedLightningBolt: Equatable {
   ) {
     self.id = id
     self.trunk = trunk
+    self.trunkVisible = trunkVisible
     self.segments = segments ?? zip(trunk.points, trunk.points.dropFirst()).map { start, end in
       RenderedLightningSegment(start: start, end: end, widthScale: 1)
     }
@@ -176,6 +179,7 @@ struct LightningTrailEngine {
   private var nextBoltID: UInt64 = 0
   private(set) var reduceMotion = false
   private var movementSuppressed = false
+  private var mainTrunkEnabled = true
 
   init(seed: UInt64 = UInt64.random(in: UInt64.min...UInt64.max)) {
     random = SplitMix64(seed: seed)
@@ -197,6 +201,13 @@ struct LightningTrailEngine {
 
   mutating func resumeMovement() {
     movementSuppressed = false
+  }
+
+  /// Controls visibility of the thick main trunk without discarding the companion arc geometry.
+  /// This lets default/precision-slow keyboard movement retain the subtle arc while suppressing
+  /// the prominent trunk until a fast-speed key is held.
+  mutating func setMainTrunkEnabled(_ enabled: Bool) {
+    mainTrunkEnabled = enabled
   }
 
   mutating func updateBendOffsetConfiguration(
@@ -257,6 +268,7 @@ struct LightningTrailEngine {
       RenderedLightningBolt(
         id: bolt.id,
         trunk: bolt.trunk,
+        trunkVisible: mainTrunkEnabled,
         segments: renderedSegments(for: bolt, at: timestamp),
         arcs: renderedArcs(for: bolt, at: timestamp),
         alpha: 1,

@@ -28,6 +28,23 @@ final class LightningTrailEngineTests: XCTestCase {
     XCTAssertTrue(engine.frame(at: 0.1).isEmpty)
   }
 
+  func testDisablingMainTrunkKeepsArcGeometryButHidesTheTrunk() {
+    var engine = LightningTrailEngine(seed: 11)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 40, y: 0), at: 0.1)
+    XCTAssertFalse(engine.frame(at: 0.1).isEmpty)
+
+    engine.setMainTrunkEnabled(false)
+    let slowFrame = engine.frame(at: 0.1)
+    XCTAssertFalse(slowFrame.isEmpty)
+    XCTAssertFalse(try! XCTUnwrap(slowFrame.bolts.first).trunkVisible)
+    engine.move(to: CGPoint(x: 80, y: 0), at: 0.2)
+    XCTAssertFalse(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
+
+    engine.setMainTrunkEnabled(true)
+    XCTAssertTrue(try! XCTUnwrap(engine.frame(at: 0.2).bolts.first).trunkVisible)
+  }
+
   func testContinuousMovementKeepsWholeBoltBeyondLegacyLimits() {
     var engine = LightningTrailEngine(seed: 2)
 

@@ -540,6 +540,8 @@ public enum RuntimeEffect: Equatable, Sendable {
   case movementBegan
   /// The final keyboard movement key was released; the visual trail should stop growing now.
   case movementEnded
+  /// A fast-speed key changed while keyboard movement is active.
+  case movementSpeedChanged(isFast: Bool)
   case pointerPositionChanged(to: Point)
   case pointerMoved(to: Point, buttons: Set<MouseButton>)
   case mouseButton(MouseButton, ButtonPhase)
@@ -1682,6 +1684,23 @@ public final class KeyveerRuntime {
     return modeEnabled ? .enabled : .available
   }
 
+  /// Whether the prominent lightning trunk should be visible for the current movement source.
+  ///
+  /// Keyboard movement only enables the prominent trunk while at least one fast-speed key is held.
+  /// The companion arc and physical pointer movement remain eligible regardless of this flag.
+  public var shouldRenderLightningTrunk: Bool {
+    let movementKeys = [
+      configuration.bindings.moveUp, configuration.bindings.moveDown,
+      configuration.bindings.moveLeft, configuration.bindings.moveRight,
+    ].map(configurationKey(named:))
+    guard pressedKeys.contains(where: movementKeys.contains) else { return true }
+    let fastKeys = [
+      configuration.bindings.speedOne, configuration.bindings.speedTwo,
+      configuration.bindings.speedThree,
+    ].map(configurationKey(named:))
+    return fastKeys.contains(where: pressedKeys.contains)
+  }
+
   public var bindingReference: BindingReference {
     BindingReference(bindings: configuration.bindings)
   }
@@ -1763,7 +1782,10 @@ public final class KeyveerRuntime {
       let disposition: EventDisposition = .consume
       keyboardDispositions[key] = disposition
       if isMappedKey(key) { pressedKeys.insert(key) }
-      let effects = isMovementKey(key) ? [RuntimeEffect.movementBegan] : []
+      var effects: [RuntimeEffect] = isMovementKey(key) ? [.movementBegan] : []
+      if isSpeedKey(key), pressedKeys.contains(where: isMovementKey) {
+        effects.append(.movementSpeedChanged(isFast: shouldRenderLightningTrunk))
+      }
       return RuntimeResponse(disposition: disposition, effects: effects)
     }
     if heldButtons.insert(button).inserted {
@@ -1813,10 +1835,14 @@ public final class KeyveerRuntime {
       return RuntimeResponse(disposition: .consume, effects: [.mouseButton(button, .up)])
     }
     pressedKeys.remove(key)
-    if modeEnabled && isMovementKey(key) && !pressedKeys.contains(where: isMovementKey) {
-      return RuntimeResponse(disposition: .consume, effects: [.movementEnded])
+    var effects: [RuntimeEffect] = []
+    if modeEnabled && isSpeedKey(key), pressedKeys.contains(where: isMovementKey) {
+      effects.append(.movementSpeedChanged(isFast: shouldRenderLightningTrunk))
     }
-    return RuntimeResponse(disposition: .consume)
+    if modeEnabled && isMovementKey(key) && !pressedKeys.contains(where: isMovementKey) {
+      effects.append(.movementEnded)
+    }
+    return RuntimeResponse(disposition: .consume, effects: effects)
   }
 
   private func frame(deltaTime: TimeInterval) -> RuntimeResponse {
@@ -1921,6 +1947,12 @@ public final class KeyveerRuntime {
       configuration.bindings.moveUp, configuration.bindings.moveDown,
       configuration.bindings.moveLeft, configuration.bindings.moveRight,
     ].map(configurationKey(named:)).contains(key)
+  }
+
+  private func isSpeedKey(_ key: Key) -> Bool {
+    [configuration.bindings.speedOne, configuration.bindings.speedTwo,
+      configuration.bindings.speedThree]
+      .map(configurationKey(named:)).contains(key)
   }
 
   private func movementVector() -> Point {

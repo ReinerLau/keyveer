@@ -618,6 +618,28 @@ final class KeyveerRuntimeTests: XCTestCase {
     XCTAssertEqual(runtime.handle(.keyUp(.l, at: 1.1)).effects, [.movementEnded])
   }
 
+  func testLightningTrunkOnlyActivatesForFastKeyboardMovement() {
+    let runtime = KeyveerRuntime(permissions: .allGranted, pointer: Point(x: 0, y: 0))
+    XCTAssertTrue(runtime.shouldRenderLightningTrunk)
+    enterFreeMode(runtime)
+
+    _ = runtime.handle(.keyDown(.l, at: 1))
+    XCTAssertFalse(runtime.shouldRenderLightningTrunk)
+
+    _ = runtime.handle(.keyDown(.a, at: 1.1))
+    XCTAssertFalse(runtime.shouldRenderLightningTrunk)
+
+    _ = runtime.handle(.keyDown(.s, at: 1.2))
+    XCTAssertTrue(runtime.shouldRenderLightningTrunk)
+
+    _ = runtime.handle(.keyUp(.s, at: 1.3))
+    XCTAssertFalse(runtime.shouldRenderLightningTrunk)
+
+    _ = runtime.handle(.keyUp(.a, at: 1.4))
+    _ = runtime.handle(.keyUp(.l, at: 1.5))
+    XCTAssertTrue(runtime.shouldRenderLightningTrunk)
+  }
+
   func testReleasingOneOfTwoMovementKeysDoesNotStopTheTrail() {
     let runtime = KeyveerRuntime(permissions: .allGranted, pointer: Point(x: 0, y: 0))
     enterFreeMode(runtime)
