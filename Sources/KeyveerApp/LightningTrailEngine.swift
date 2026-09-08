@@ -643,6 +643,11 @@ struct LightningTrailEngine {
       centerline: centerline, startDistance: existing.endDistance, endDistance: targetEnd,
       seed: existing.id,
       bendConfiguration: existing.bendConfiguration)
+    guard extensionPoints.count >= 2 else { return existing }
+    if extensionPoints.count == 2,
+       targetEnd + 0.000_001 < existing.startDistance + existing.targetLength {
+      return existing
+    }
     let points = existing.stroke.points + Array(extensionPoints.dropFirst())
     return makeCompanionArc(
       id: existing.id, startDistance: existing.startDistance, endDistance: targetEnd,

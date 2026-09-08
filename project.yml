@@ -43,7 +43,7 @@ targets:
         INFOPLIST_KEY_LSUIElement: NO
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 0.1.1
         GENERATE_INFOPLIST_FILE: YES
         OTHER_SWIFT_FLAGS: "-parse-as-library"
   KeyveerRuntimeTests:

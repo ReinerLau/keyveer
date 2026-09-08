@@ -554,6 +554,31 @@ final class LightningTrailEngineTests: XCTestCase {
       })
   }
 
+  func testGrowingHorizontalCompanionArcAddsAPathBendInsteadOfAFlatExtension() throws {
+    var engine = LightningTrailEngine(seed: 42)
+    engine.updateBendOffsetConfiguration(
+      spacingMin: 100, spacingMax: 100,
+      distanceMin: 10, distanceMax: 10, directionMinDegrees: 90, directionMaxDegrees: 90,
+      arcLengthMin: 200, arcLengthMax: 200,
+      arcGapMin: 24, arcGapMax: 24)
+    engine.move(to: CGPoint(x: 0, y: 0), at: 0)
+    engine.move(to: CGPoint(x: 40, y: 0), at: 0.01)
+    engine.move(to: CGPoint(x: 60, y: 0), at: 0.02)
+
+    let shortGrowthArc = try XCTUnwrap(engine.frame(at: 0.02).bolts.first?.arcs.first)
+    XCTAssertEqual(shortGrowthArc.stroke.points.last, CGPoint(x: 40, y: 0))
+
+    engine.move(to: CGPoint(x: 160, y: 0), at: 0.03)
+    let arc = try XCTUnwrap(engine.frame(at: 0.03).bolts.first?.arcs.first)
+    XCTAssertEqual(arc.stroke.points.last, CGPoint(x: 160, y: 0))
+    XCTAssertTrue(
+      arc.stroke.points.dropFirst().dropLast().contains { abs($0.y) > 0.001 },
+      "arc growth should wait for an interior path sample before extending")
+    XCTAssertEqual(
+      Array(arc.stroke.points.prefix(shortGrowthArc.stroke.points.count)),
+      shortGrowthArc.stroke.points)
+  }
+
   func testCompanionArcsAreDeterministicAndFrozenAsTheBoltGrows() {
     var first = LightningTrailEngine(seed: 42)
     var second = LightningTrailEngine(seed: 42)
